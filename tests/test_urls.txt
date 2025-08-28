@@ -1,0 +1,8 @@
+https://developer.apple.com/documentation/xcode-release-notes/xcode-26-release-notes
+https://developer.apple.com/documentation/watchos-release-notes/watchos-26-release-notes/
+https://developer.apple.com/documentation/xcode/distributing-binary-frameworks-as-swift-packages
+https://developer.apple.com/documentation/swift-playgrounds/add-a-swift-package
+https://developer.apple.com/documentation/applenewsformat/advertisementautoplacement
+https://developer.apple.com/documentation/applenewsformat/advertisementautoplacement
+https://developer.apple.com/documentation/applenewsformat/advertisementautoplacement
+https://developer.apple.com/documentation/matter/mtrattributeidtype/mtrclusterbindingattributegeneratedcommandlistid
