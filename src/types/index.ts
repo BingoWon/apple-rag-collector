@@ -1,8 +1,14 @@
 /**
  * Shared type definitions for the Apple RAG Collector
+ *
+ * 纯批处理架构 - 永远不会有单个处理的情况
+ * 所有类型定义都基于批量处理设计
  */
 
-
+// 批处理配置接口
+interface BatchConfig {
+  readonly batchSize: number;
+}
 
 // Application configuration interface
 interface AppConfig {
@@ -14,16 +20,11 @@ interface AppConfig {
     readonly password: string;
     readonly ssl: boolean;
   };
-  readonly processing: {
-    readonly batchSize: number;
-  };
-
+  readonly batchProcessing: BatchConfig;
   readonly logging: {
     readonly level: string;
   };
 }
-
-
 
 // Database record interface
 interface DatabaseRecord {
@@ -33,8 +34,8 @@ interface DatabaseRecord {
   readonly title: string | null;
   readonly content: string;
   readonly collect_count: number;
-  readonly created_at: number;
-  readonly updated_at: number | null;
+  readonly created_at: Date;
+  readonly updated_at: Date | null;
 }
 
 // Processed document content interface
@@ -42,6 +43,22 @@ interface DocumentContent {
   readonly title: string | null;
   readonly content: string;
   readonly extractedUrls: readonly string[];
+}
+
+// Chunk record interface for vector storage
+interface ChunkRecord {
+  readonly id: string;
+  readonly url: string;
+  readonly content: string;
+  readonly created_at: Date;
+  readonly embedding: number[] | null;
+}
+
+// 批处理结果接口 - 简化为核心类型
+interface BatchResult<T> {
+  readonly url: string;
+  readonly data: T | null;
+  readonly error?: string;
 }
 
 // Apple API content section interface
@@ -83,14 +100,12 @@ interface AppleAPIResponse {
 interface DatabaseStats {
   readonly total: number;
   readonly avgCollectCount: number;
-  readonly collectedCount: number;        // CollectCount > 0 的记录数
-  readonly collectedPercentage: string;   // CollectCount > 0 的比例（百分比格式）
-  readonly maxCollectCount: number;       // collect_count 的最大值
-  readonly minCollectCount: number;       // collect_count 的最小值
+  readonly collectedCount: number; // CollectCount > 0 的记录数
+  readonly collectedPercentage: string; // CollectCount > 0 的比例（百分比格式）
+  readonly maxCollectCount: number; // collect_count 的最大值
+  readonly minCollectCount: number; // collect_count 的最小值
   readonly collectCountDistribution: Record<string, { count: number; percentage: string }>; // 每个collect_count值的分布
 }
-
-
 
 export type {
   AppConfig,
@@ -98,5 +113,8 @@ export type {
   DocumentContent,
   ContentSection,
   AppleAPIResponse,
-  DatabaseStats
+  DatabaseStats,
+  ChunkRecord,
+  BatchConfig,
+  BatchResult,
 };

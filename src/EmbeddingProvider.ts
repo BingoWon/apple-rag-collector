@@ -1,23 +1,23 @@
 /**
- * Embedding Core - 统一的 Embedding 接口实现
+ * Pure Batch Embedding Provider - Global Optimal Solution
  *
- * 提供进程安全的云端 API embedding 服务，专为 Apple Developer Documentation 优化。
+ * Implements true batch API calls for embedding generation, designed specifically
+ * for Apple Developer Documentation processing. Zero single processing methods.
  *
  * Features:
- * - 云端 API 集成，永不使用本地模型
- * - 进程安全的单例模式
- * - 智能 API Key 管理和自动轮换
- * - L2 标准化的 2560 维度向量
- * - 自动重试和错误恢复机制
- * 
+ * - True batch API calls: 1 request processes N texts
+ * - Multi-key management with automatic failover
+ * - L2 normalized 2560-dimension vectors
+ * - Atomic batch error handling
+ * - Zero code redundancy
+ *
  * Usage:
  * ```typescript
- * import { createEmbedding } from './EmbeddingCore.js';
- * const embedding = await createEmbedding("Your text here");
+ * import { createEmbeddings } from './EmbeddingProvider.js';
+ * const embeddings = await createEmbeddings(["text1", "text2", "text3"]);
  * ```
  */
 
-import fetch from 'node-fetch';
 import { KeyManager } from './KeyManager.js';
 
 // ============================================================================
@@ -25,127 +25,93 @@ import { KeyManager } from './KeyManager.js';
 // ============================================================================
 
 export interface EmbeddingConfig {
-  readonly provider: 'api'; // Always use API, never local
   readonly model: string;
   readonly dimension: number;
-  readonly maxLength: number;
   readonly apiBaseUrl: string;
   readonly timeout: number;
 }
 
 export function createEmbeddingConfig(): EmbeddingConfig {
   return {
-    provider: 'api', // Always use API
     model: process.env['EMBEDDING_MODEL'] || 'Qwen/Qwen3-Embedding-4B',
     dimension: parseInt(process.env['EMBEDDING_DIM'] || '2560'),
-    maxLength: parseInt(process.env['EMBEDDING_MAX_LENGTH'] || '32000'),
     apiBaseUrl: process.env['EMBEDDING_API_BASE_URL'] || 'https://api.siliconflow.cn/v1/embeddings',
-    timeout: parseInt(process.env['EMBEDDING_API_TIMEOUT'] || '10') * 1000 // Convert to milliseconds
+    timeout: parseInt(process.env['EMBEDDING_API_TIMEOUT'] || '30') * 1000
   };
 }
 
 // ============================================================================
-// Abstract Provider Interface
+// Pure Batch Embedding Provider
 // ============================================================================
 
 /**
- * Abstract base class for all embedding providers
+ * Pure batch embedding provider - zero single processing methods
  */
-export abstract class EmbeddingProvider {
-  protected config: EmbeddingConfig;
+export class BatchEmbeddingProvider {
+  private readonly config: EmbeddingConfig;
+  private readonly keyManager: KeyManager;
 
   constructor(config: EmbeddingConfig) {
     this.config = config;
-  }
-
-  /**
-   * Encode single text to embedding with L2 normalization
-   */
-  abstract encodeSingle(text: string, isQuery?: boolean): Promise<number[]>;
-
-  /**
-   * Get embedding dimension
-   */
-  abstract get embeddingDim(): number;
-
-  /**
-   * Get model name
-   */
-  abstract get modelName(): string;
-
-  /**
-   * L2 normalize a vector
-   */
-  protected l2Normalize(vector: number[]): number[] {
-    const norm = Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0));
-    if (norm === 0) return vector;
-    return vector.map(val => val / norm);
-  }
-}
-
-// ============================================================================
-// Cloud API Provider Implementation
-// ============================================================================
-
-/**
- * Cloud API Provider - 云端 embedding 服务实现
- */
-export class CloudEmbeddingProvider extends EmbeddingProvider {
-  private keyManager: KeyManager;
-
-  constructor(config: EmbeddingConfig) {
-    super(config);
     this.keyManager = new KeyManager();
   }
 
-  async encodeSingle(text: string, _isQuery: boolean = false): Promise<number[]> {
-    const maxRetries = 3;
+  /**
+   * True batch encoding: 1 API call processes all texts
+   */
+  async encodeBatch(texts: string[]): Promise<number[][]> {
+    if (!texts.length) return [];
+
+    const maxKeyAttempts = 3;
     let lastError: Error | null = null;
 
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
+    for (let keyAttempt = 0; keyAttempt < maxKeyAttempts; keyAttempt++) {
       try {
         const apiKey = this.keyManager.getCurrentKey();
-        const response = await this.makeApiRequest(text, apiKey);
-        
-        if (response.data && response.data.length > 0) {
-          const embedding = response.data[0].embedding;
-          return this.l2Normalize(embedding);
-        } else {
-          throw new Error('No embedding data in response');
+
+        for (let retry = 0; retry < 3; retry++) {
+          try {
+            const response = await this.makeBatchApiRequest(texts, apiKey);
+
+            if (response.data && response.data.length === texts.length) {
+              return response.data.map((item: any) => this.l2Normalize(item.embedding));
+            } else {
+              throw new Error(`Invalid response: expected ${texts.length} embeddings, got ${response.data?.length || 0}`);
+            }
+          } catch (error) {
+            lastError = error as Error;
+
+            if (this.isApiKeyError(error as Error)) {
+              await this.keyManager.removeKey(apiKey);
+              break; // Try next key
+            }
+
+            if (this.isRateLimitError(error as Error)) {
+              this.keyManager.switchToNextKey();
+              break; // Try next key
+            }
+
+            // Server error - retry with same key
+            if (retry < 2 && this.isRetryableError(error as Error)) {
+              await this.sleep(1000 * (retry + 1));
+              continue;
+            }
+
+            throw error;
+          }
         }
       } catch (error) {
-        lastError = error as Error;
-        console.error(`Embedding attempt ${attempt + 1} failed:`, error);
-
-        // If it's an API key error, remove the key and try next one
-        if (this.isApiKeyError(error as Error)) {
-          const currentKey = this.keyManager.getCurrentKey();
-          await this.keyManager.removeKey(currentKey);
-          
-          // Try next key if available
-          try {
-            this.keyManager.switchToNextKey();
-          } catch (switchError) {
-            throw new Error('No more API keys available');
-          }
-        } else {
-          // For other errors, wait a bit before retry
-          await this.sleep(1000 * (attempt + 1));
+        if ((error as Error).message.includes('No API keys available')) {
+          throw new Error('All API keys exhausted');
         }
+        lastError = error as Error;
       }
     }
 
-    throw lastError || new Error('Failed to generate embedding after all retries');
+    throw lastError || new Error('Batch embedding failed after all attempts');
   }
 
-  private async makeApiRequest(text: string, apiKey: string): Promise<any> {
-    const requestBody = {
-      model: this.config.model,
-      input: text,
-      encoding_format: 'float'
-    };
-
-    // Create AbortController for timeout
+  private async makeBatchApiRequest(texts: string[], apiKey: string): Promise<any> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
 
@@ -156,7 +122,11 @@ export class CloudEmbeddingProvider extends EmbeddingProvider {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`
         },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          model: this.config.model,
+          input: texts, // True batch: all texts in single request
+          encoding_format: 'float'
+        }),
         signal: controller.signal
       });
 
@@ -164,7 +134,7 @@ export class CloudEmbeddingProvider extends EmbeddingProvider {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorText}`);
+        throw new Error(`API error ${response.status}: ${errorText}`);
       }
 
       return await response.json();
@@ -174,12 +144,23 @@ export class CloudEmbeddingProvider extends EmbeddingProvider {
     }
   }
 
+  private l2Normalize(vector: number[]): number[] {
+    const norm = Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0));
+    return norm === 0 ? vector : vector.map(val => val / norm);
+  }
+
   private isApiKeyError(error: Error): boolean {
-    const errorMessage = error.message.toLowerCase();
-    return errorMessage.includes('unauthorized') || 
-           errorMessage.includes('invalid api key') ||
-           errorMessage.includes('403') ||
-           errorMessage.includes('401');
+    const msg = error.message.toLowerCase();
+    return msg.includes('401') || msg.includes('403') || msg.includes('unauthorized');
+  }
+
+  private isRateLimitError(error: Error): boolean {
+    return error.message.toLowerCase().includes('429');
+  }
+
+  private isRetryableError(error: Error): boolean {
+    const msg = error.message.toLowerCase();
+    return msg.includes('503') || msg.includes('504') || msg.includes('timeout');
   }
 
   private sleep(ms: number): Promise<void> {
@@ -195,53 +176,44 @@ export class CloudEmbeddingProvider extends EmbeddingProvider {
   }
 }
 
+
+
 // ============================================================================
 // Global Provider Management
 // ============================================================================
 
-// Process-safe global embedding provider instance
-let globalEmbedder: EmbeddingProvider | null = null;
+// Process-safe global batch embedding provider instance
+let globalBatchProvider: BatchEmbeddingProvider | null = null;
 let currentPid: number | null = null;
 
 /**
- * Get or create process-safe global embedding provider instance
+ * Get or create process-safe global batch embedding provider
  */
-export function getEmbedder(config?: EmbeddingConfig): EmbeddingProvider {
-  // Check if we're in a different process (after fork)
+function getBatchProvider(config?: EmbeddingConfig): BatchEmbeddingProvider {
   const currentProcessPid = process.pid;
 
-  if (globalEmbedder === null || currentPid !== currentProcessPid) {
+  if (globalBatchProvider === null || currentPid !== currentProcessPid) {
     currentPid = currentProcessPid;
-    
     const finalConfig = config || createEmbeddingConfig();
-
-    // Always use cloud API provider
-    globalEmbedder = new CloudEmbeddingProvider(finalConfig);
+    globalBatchProvider = new BatchEmbeddingProvider(finalConfig);
   }
 
-  return globalEmbedder;
-}
-
-/**
- * Reset the global embedder instance (for testing only)
- */
-export function resetEmbedder(): void {
-  globalEmbedder = null;
-  currentPid = null;
+  return globalBatchProvider;
 }
 
 // ============================================================================
-// Public API
+// Public API - Pure Batch Processing Only
 // ============================================================================
 
 /**
- * Create L2 normalized embedding for single text
- * 
- * @param text Text to encode
- * @param isQuery Whether text is a query
- * @returns L2 normalized embedding vector as array of numbers
+ * Create L2 normalized embeddings for batch of texts - True batch API call
+ *
+ * @param texts Array of texts to encode
+ * @returns Array of L2 normalized embedding vectors
  */
-export async function createEmbedding(text: string, isQuery: boolean = false): Promise<number[]> {
-  const embedder = getEmbedder();
-  return await embedder.encodeSingle(text, isQuery);
+export async function createEmbeddings(texts: string[]): Promise<number[][]> {
+  if (!texts.length) return [];
+
+  const provider = getBatchProvider();
+  return await provider.encodeBatch(texts);
 }

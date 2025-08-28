@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { type DatabaseRecord, type DatabaseStats } from './types/index.js';
+import { type DatabaseRecord, type DatabaseStats, type ChunkRecord } from './types/index.js';
 
 class PostgreSQLManager {
   private pool: Pool;
@@ -11,30 +11,45 @@ class PostgreSQLManager {
   async initialize(): Promise<void> {
     const client = await this.pool.connect();
     try {
-      // Enable UUID extension
-      await client.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
+      // Enable required extensions
+      await client.query('CREATE EXTENSION IF NOT EXISTS "vector"');
 
       // Create apple_docs table if it doesn't exist
       await client.query(`
         CREATE TABLE IF NOT EXISTS apple_docs (
-          id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           source_url TEXT NOT NULL UNIQUE,
           raw_json JSONB,
           title TEXT,
           content TEXT,
           collect_count INTEGER NOT NULL DEFAULT 0,
-          created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()),
-          updated_at BIGINT
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+          updated_at TIMESTAMP WITH TIME ZONE
         )
       `);
 
-      // Create indexes if they don't exist
+      // Create chunks table if it doesn't exist
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS chunks (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          url TEXT NOT NULL,
+          content TEXT NOT NULL,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+          embedding HALFVEC(2560)
+        )
+      `);
+
+      // Create indexes for apple_docs table
       await client.query('CREATE INDEX IF NOT EXISTS idx_apple_docs_collect_count_url ON apple_docs(collect_count, source_url)');
       await client.query('CREATE INDEX IF NOT EXISTS idx_apple_docs_created_at ON apple_docs(created_at)');
       await client.query('CREATE INDEX IF NOT EXISTS idx_apple_docs_updated_at ON apple_docs(updated_at)');
       await client.query('CREATE INDEX IF NOT EXISTS idx_apple_docs_title ON apple_docs(title)');
       await client.query('CREATE INDEX IF NOT EXISTS idx_apple_docs_source_url ON apple_docs(source_url)');
       await client.query('CREATE INDEX IF NOT EXISTS idx_apple_docs_raw_json ON apple_docs USING GIN (raw_json)');
+
+      // Create indexes for chunks table
+      await client.query('CREATE INDEX IF NOT EXISTS idx_chunks_url ON chunks(url)');
+      await client.query('CREATE INDEX IF NOT EXISTS idx_chunks_created_at ON chunks(created_at)');
 
       // Create stats view if it doesn't exist
       await client.query(`
@@ -107,23 +122,19 @@ class PostgreSQLManager {
 
     const client = await this.pool.connect();
     try {
-      const currentTime = Math.floor(Date.now() / 1000);
-
-      // 真正的批处理：一次性插入所有URL
+      // 真正的批处理：一次性插入所有URL，使用数据库生成UUID
       const values = urls.map((_, index) => {
-        const offset = index * 4;
-        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`;
+        const offset = index * 2;
+        return `($${offset + 1}, $${offset + 2})`;
       }).join(', ');
 
       const params = urls.flatMap(url => [
-        crypto.randomUUID(),
         url,
-        0,
-        currentTime
+        0
       ]);
 
       const result = await client.query(`
-        INSERT INTO apple_docs (id, source_url, collect_count, created_at)
+        INSERT INTO apple_docs (source_url, collect_count)
         VALUES ${values}
         ON CONFLICT (source_url) DO NOTHING
         RETURNING source_url
@@ -155,7 +166,7 @@ class PostgreSQLManager {
       const maxCollectCount = parseInt(minMaxResult.rows[0]?.max || '0');
 
       const collectCountDistribution: Record<string, { count: number; percentage: string }> = {};
-      distributionResult.rows.forEach(row => {
+      distributionResult.rows.forEach((row: any) => {
         const collectCount = String(row.collect_count);
         const count = parseInt(row.count);
         const percentage = total > 0 ? `${Math.round((count / total) * 10000) / 100}%` : '0%';
@@ -185,40 +196,17 @@ class PostgreSQLManager {
         LIMIT $1
       `, [batchSize]);
 
-      return result.rows as DatabaseRecord[];
+      return result.rows.map((row: any) => ({
+        ...row,
+        created_at: row.created_at,
+        updated_at: row.updated_at
+      })) as DatabaseRecord[];
     } finally {
       client.release();
     }
   }
 
-  async updateRecord(record: DatabaseRecord): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query(`
-        UPDATE apple_docs
-        SET raw_json = $1, title = $2, content = $3, collect_count = $4, updated_at = $5
-        WHERE id = $6
-      `, [
-        record.raw_json,
-        record.title,
-        record.content,
-        record.collect_count,
-        record.updated_at,
-        record.id
-      ]);
-    } finally {
-      client.release();
-    }
-  }
 
-  async deleteRecord(recordId: string): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('DELETE FROM apple_docs WHERE id = $1', [recordId]);
-    } finally {
-      client.release();
-    }
-  }
 
   /**
    * 原子批处理：先删除，再插入成功和失败记录
@@ -259,6 +247,41 @@ class PostgreSQLManager {
   }
 
   /**
+   * 轻量级批量更新：仅更新 collect_count，保持其他字段不变
+   */
+  async batchUpdateCollectCountOnly(updates: Array<{ id: string; collect_count: number }>): Promise<void> {
+    if (updates.length === 0) return;
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // 构建 CASE WHEN 语句进行批量更新
+      const caseStatements = updates.map((_, index) =>
+        `WHEN id = $${index * 2 + 1} THEN $${index * 2 + 2}`
+      ).join(' ');
+
+      const ids = updates.map(u => u.id);
+      const params = updates.flatMap(u => [u.id, u.collect_count]);
+
+      await client.query(`
+        UPDATE apple_docs
+        SET collect_count = CASE ${caseStatements} END
+        WHERE id = ANY($${params.length + 1})
+      `, [...params, ids]);
+
+      await client.query('COMMIT');
+      console.log(`📊 Updated collect_count for ${updates.length} unchanged records`);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('❌ Failed to update collect counts:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
    * 在事务内批量插入记录
    */
   private async batchInsertRecordsInTransaction(client: any, records: DatabaseRecord[]): Promise<void> {
@@ -291,6 +314,88 @@ class PostgreSQLManager {
         updated_at = EXCLUDED.updated_at
     `, params);
   }
+
+  /**
+   * Replace chunks with embeddings using atomic "delete-then-insert" strategy
+   * Ensures each URL only has the latest chunks, preventing data accumulation
+   */
+  async insertChunks(chunks: Array<{
+    url: string;
+    content: string;
+    embedding: number[];
+  }>): Promise<void> {
+    if (chunks.length === 0) return;
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Step 1: Batch delete existing chunks for all URLs in this batch
+      const urls = [...new Set(chunks.map(c => c.url))];
+      if (urls.length > 0) {
+        const urlParams = urls.map((_, index) => `$${index + 1}`).join(', ');
+        const deleteResult = await client.query(
+          `DELETE FROM chunks WHERE url IN (${urlParams})`,
+          urls
+        );
+        console.log(`🗑️ Deleted ${deleteResult.rowCount || 0} existing chunks for ${urls.length} URLs`);
+      }
+
+      // Step 2: Batch insert new chunks
+      const values: string[] = [];
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      for (const chunk of chunks) {
+        values.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2})`);
+        const vectorString = `[${chunk.embedding.join(',')}]`;
+        params.push(chunk.url, chunk.content, vectorString);
+        paramIndex += 3;
+      }
+
+      const insertQuery = `
+        INSERT INTO chunks (url, content, embedding)
+        VALUES ${values.join(', ')}
+      `;
+
+      await client.query(insertQuery, params);
+      await client.query('COMMIT');
+
+      console.log(`✅ Replaced chunks: ${urls.length} URLs, ${chunks.length} new chunks`);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('❌ Failed to replace chunks:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Get chunks by URL
+   */
+  async getChunksByUrl(url: string): Promise<ChunkRecord[]> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        'SELECT id, url, content, created_at, embedding FROM chunks WHERE url = $1 ORDER BY created_at',
+        [url]
+      );
+
+      return result.rows.map((row: any) => ({
+        id: row.id,
+        url: row.url,
+        content: row.content,
+        created_at: row.created_at,
+        // Convert HALFVEC back to number array
+        embedding: row.embedding ? Array.from(row.embedding) : null
+      }));
+    } finally {
+      client.release();
+    }
+  }
+
+
 
   async close(): Promise<void> {
     await this.pool.end();

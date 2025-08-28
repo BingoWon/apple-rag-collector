@@ -3,7 +3,7 @@
  * Supports structured logging with configurable levels
  */
 
-type LogLevel = "debug" | "info" | "warn" | "error";
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 class Logger {
   private level: LogLevel;
@@ -14,7 +14,7 @@ class Logger {
     error: 3,
   };
 
-  constructor(level: LogLevel = "info") {
+  constructor(level: LogLevel = 'info') {
     this.level = level;
   }
 
@@ -34,26 +34,26 @@ class Logger {
   }
 
   debug(message: string, data?: Record<string, unknown>): void {
-    if (this.shouldLog("debug")) {
-      console.log(this.formatMessage("debug", message, data));
+    if (this.shouldLog('debug')) {
+      console.log(this.formatMessage('debug', message, data));
     }
   }
 
   info(message: string, data?: Record<string, unknown>): void {
-    if (this.shouldLog("info")) {
-      console.log(this.formatMessage("info", message, data));
+    if (this.shouldLog('info')) {
+      console.log(this.formatMessage('info', message, data));
     }
   }
 
   warn(message: string, data?: Record<string, unknown>): void {
-    if (this.shouldLog("warn")) {
-      console.warn(this.formatMessage("warn", message, data));
+    if (this.shouldLog('warn')) {
+      console.warn(this.formatMessage('warn', message, data));
     }
   }
 
   error(message: string, data?: Record<string, unknown>): void {
-    if (this.shouldLog("error")) {
-      console.error(this.formatMessage("error", message, data));
+    if (this.shouldLog('error')) {
+      console.error(this.formatMessage('error', message, data));
     }
   }
 
