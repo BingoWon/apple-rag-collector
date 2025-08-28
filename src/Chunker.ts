@@ -1,44 +1,48 @@
 /**
- * Apple文档专用智能分块实现 - 统一JSON格式输出
- * 
- * === CHUNKING 策略详细说明 ===
- * 
- * 本模块实现五层优先级的智能分块策略，专门针对Apple开发者文档的结构特点设计。
- * 所有策略都输出统一的JSON格式，确保系统一致性和处理简化。
- * 
- * 【极致简化的统一标题分割框架】
- * - 核心方法：`_chunkByHeader(text, level)` 处理所有标题级别
- * - 硬编码设计：无配置化，直接硬编码所有参数
- * - 完全统一：H1/H2/H3使用完全相同的处理逻辑
- * - 统一算法：所有级别都使用TARGET_CHUNK_SIZE目标的贪婪合并
- * - 统一格式：所有输出都是相同的JSON结构
- * 
- * 【处理逻辑完全统一】
- * - 触发条件：≥2个对应级别的标题
- * - Section分割：每个标题作为独立section，不包含前置内容
- * - Context提取：第一个标题之前的内容作为context
- * - 清晰分离：context和content完全分离，无重叠
- * - 输出格式：{"context": "第一个标题前的内容", "content": "合并的标题章节"}
- * 
- * 【三个优先级完全统一】
- * - 第一优先级：H1分割（≥2个H1标题）
- * - 第二优先级：H2分割（≥2个H2标题）
- * - 第三优先级：H3分割（≥2个H3标题）
- * 
- * 【第四优先级：智能换行分割】
- * - 触发条件：长文档且前三个优先级都不符合时（无足够H1/H2/H3标题）
- * - 处理逻辑：动态计算chunk大小，按换行符边界进行分割
- * - 算法步骤：
- *   1. 计算chunk数量：总长度 ÷ TARGET_CHUNK_SIZE，向下取整
- *   2. 计算修正chunk大小：总长度 ÷ chunk数量
- *   3. 在修正大小附近找最近的换行符作为分割点
- * - 输出格式：{"context": "第一个H标题之前的内容", "content": "分割后的内容"}
- * 
- * 【短文档特殊处理】
- * - 触发条件：文档长度 ≤ TARGET_CHUNK_SIZE
- * - 处理逻辑：直接返回完整内容，不进行分割
- * - 输出格式：{"context": "第一个H标题之前的内容", "content": "完整内容"}
+ * Apple Documentation Intelligent Chunking Implementation - Unified JSON Output
+ *
+ * === CHUNKING STRATEGY OVERVIEW ===
+ *
+ * This module implements a five-tier priority intelligent chunking strategy specifically designed
+ * for Apple Developer Documentation structure characteristics. All strategies output unified JSON
+ * format to ensure system consistency and processing simplification.
+ *
+ * 【Unified Header-Based Splitting Framework】
+ * - Core method: `_chunkByHeader(text, level)` handles all header levels
+ * - Hardcoded design: No configuration, all parameters directly hardcoded
+ * - Complete unification: H1/H2/H3 use identical processing logic
+ * - Unified algorithm: All levels use TARGET_CHUNK_SIZE target greedy merging
+ * - Unified format: All outputs use the same JSON structure
+ *
+ * 【Completely Unified Processing Logic】
+ * - Trigger condition: ≥2 headers of corresponding level
+ * - Section splitting: Each header as independent section, excluding preceding content
+ * - Context extraction: Content before first header as context
+ * - Clear separation: Context and content completely separated, no overlap
+ * - Output format: {"context": "content before first header", "content": "merged header sections"}
+ *
+ * 【Three Priority Levels Completely Unified】
+ * - First priority: H1 splitting (≥2 H1 headers)
+ * - Second priority: H2 splitting (≥2 H2 headers)
+ * - Third priority: H3 splitting (≥2 H3 headers)
+ *
+ * 【Fourth Priority: Smart Newline Splitting】
+ * - Trigger condition: Long documents when first three priorities don't qualify
+ * - Processing logic: Dynamic chunk size calculation, split by newline boundaries
+ * - Algorithm steps:
+ *   1. Calculate chunk count: total length ÷ TARGET_CHUNK_SIZE, floor
+ *   2. Calculate adjusted chunk size: total length ÷ chunk count
+ *   3. Find nearest newline around adjusted size as split point
+ * - Output format: {"context": "content before first H header", "content": "split content"}
+ *
+ * 【Short Document Special Handling】
+ * - Trigger condition: Document length ≤ TARGET_CHUNK_SIZE
+ * - Processing logic: Return complete content directly, no splitting
+ * - Output format: {"context": "content before first H header", "content": "complete content"}
  */
+
+import { type BatchConfig, type BatchResult } from './types/index.js';
+import { BatchErrorHandler } from './utils/batch-error-handler.js';
 
 interface ChunkData {
   context: string;
@@ -47,36 +51,53 @@ interface ChunkData {
 
 export class Chunker {
   /**
-   * Apple文档专用分块器 - 基于##双井号分割
-   * 
-   * 超参数配置：
-   * - TARGET_CHUNK_SIZE: 目标chunk大小（字符数）
-   * - MAX_CHUNK_SIZE: 最大chunk大小（字符数）
+   * Apple Documentation Specialized Chunker - Header-based splitting
+   *
+   * Hyperparameter configuration:
+   * - TARGET_CHUNK_SIZE: Target chunk size (character count)
+   * - MAX_CHUNK_SIZE: Maximum chunk size (character count)
    */
-  
-  // 超参数定义
+
+  // Hyperparameter definitions
   private static readonly TARGET_CHUNK_SIZE = 2500;
   private static readonly MAX_CHUNK_SIZE = 3000;
 
-  constructor() {}
+  constructor(private readonly config: BatchConfig) {}
 
   /**
-   * 统一标题分割框架：H1 → H2 → H3 → 完整内容
+   * Unified header splitting framework: H1 → H2 → H3 → Complete content
    */
-  public chunkText(text: string): string[] {
-    console.log(`开始分块，文档长度: ${text.length} 字符，前100字符: ${text.slice(0, 100)}`);
+  chunkTexts(contentResults: Array<{ url: string; content: string }>): BatchResult<string[]>[] {
+    const results: BatchResult<string[]>[] = [];
 
+    for (let i = 0; i < contentResults.length; i += this.config.batchSize) {
+      const batch = contentResults.slice(i, i + this.config.batchSize);
+      const batchResults = batch.map(item => this.chunkSingleText(item));
+      results.push(...batchResults);
+    }
+
+    return results;
+  }
+
+  private chunkSingleText(item: { url: string; content: string }): BatchResult<string[]> {
+    try {
+      const chunks = this.performChunking(item.content);
+      return BatchErrorHandler.success(item.url, chunks);
+    } catch (error) {
+      return BatchErrorHandler.failure(item.url, error);
+    }
+  }
+
+  private performChunking(text: string): string[] {
     if (!text.trim()) {
       return [];
     }
 
     if (text.length <= Chunker.TARGET_CHUNK_SIZE) {
-      console.log(`文本长度小于${Chunker.TARGET_CHUNK_SIZE}字符，直接返回完整内容`);
-      const chunks = this._chunkComplete(text);
-      return chunks;
+      return this._chunkComplete(text);
     }
 
-    // 统一的标题分割：H1 → H2 → H3
+    // Unified header splitting: H1 → H2 → H3
     for (const level of [1, 2, 3]) {
       const chunks = this._chunkByHeader(text, level);
       if (chunks.length > 0) {
@@ -84,14 +105,12 @@ export class Chunker {
       }
     }
 
-    // 第四优先级：智能换行分割
-    console.log("使用第四优先级：智能换行分割");
-    const chunks = this._chunkByNewlines(text);
-    return chunks;
+    // Fourth priority: Smart newline splitting
+    return this._chunkByNewlines(text);
   }
 
   /**
-   * 最优化的一次遍历框架
+   * Optimized single-pass framework
    */
   private _chunkByHeader(text: string, level: number): string[] {
     const prefixMap: Record<number, string> = { 1: '# ', 2: '## ', 3: '### ' };
@@ -101,26 +120,26 @@ export class Chunker {
       return [];
     }
 
-    // 一次遍历同时获取context和剩余文本
+    // Single pass to get both context and remaining text
     const [context, remainingText] = this._splitContextAndRemaining(text, prefix);
     if (!remainingText) {
       return [];
     }
 
-    // 简单分割剩余部分
+    // Simple split of remaining sections
     const sections = this._simpleSplitSections(remainingText, prefix);
     if (sections.length < 2) {
       return [];
     }
 
-    console.log(`检测到${sections.length}个H${level}标题，开始H${level}分割`);
+    console.log(`Detected ${sections.length} H${level} headers, starting H${level} splitting`);
     const chunks = this._greedyMergeWithJsonSize(sections, context);
-    console.log(`H${level}分块完成: ${chunks.length} chunks`);
+    console.log(`H${level} chunking completed: ${chunks.length} chunks`);
     return chunks;
   }
 
   /**
-   * 一次遍历同时获取context和剩余文本
+   * Single pass to get both context and remaining text
    */
   private _splitContextAndRemaining(text: string, prefix: string): [string, string] {
     const lines = text.split('\n');
@@ -136,7 +155,7 @@ export class Chunker {
   }
 
   /**
-   * 极简的分割逻辑 - 无需任何过滤
+   * Minimal splitting logic - no filtering needed
    */
   private _simpleSplitSections(text: string, prefix: string): string[] {
     const lines = text.split('\n');
@@ -162,7 +181,7 @@ export class Chunker {
   }
 
   /**
-   * 基于完整JSON大小的贪婪合并算法 - 使用超参数配置
+   * Greedy merging algorithm based on complete JSON size - using hyperparameter configuration
    */
   private _greedyMergeWithJsonSize(sections: string[], context: string): string[] {
     if (sections.length === 0) {
@@ -191,17 +210,17 @@ export class Chunker {
       };
       const currentJson = JSON.stringify(currentChunk, null, 2);
 
-      // 基于完整JSON大小判断是否合并
+      // Judge whether to merge based on complete JSON size
       if (testJson.length <= Chunker.MAX_CHUNK_SIZE && currentJson.length < Chunker.TARGET_CHUNK_SIZE) {
         currentSections.push(section);
       } else {
-        // 完成当前chunk，开始新的chunk
+        // Complete current chunk, start new chunk
         jsonChunks.push(currentJson);
         currentSections = [section];
       }
     }
 
-    // 添加最后一个chunk
+    // Add the last chunk
     const finalContent = currentSections.join('\n\n');
     const finalChunk: ChunkData = {
       context: context,
@@ -214,7 +233,7 @@ export class Chunker {
   }
 
   /**
-   * 完整内容JSON格式化
+   * Complete content JSON formatting
    */
   private _chunkComplete(text: string): string[] {
     const [context, content] = this._splitByFirstHeader(text);
@@ -226,14 +245,14 @@ export class Chunker {
   }
 
   /**
-   * 第四优先级：智能换行分割 - 参考YouTube chunker算法
+   * Fourth priority: Smart newline splitting - inspired by YouTube chunker algorithm
    */
   private _chunkByNewlines(text: string): string[] {
-    // 先分离context和content
+    // First separate context and content
     const [context, content] = this._splitByFirstHeader(text);
 
     if (!content.trim()) {
-      // 如果没有content，返回完整内容
+      // If no content, return complete content
       const chunk: ChunkData = {
         context: context,
         content: content
@@ -241,25 +260,25 @@ export class Chunker {
       return [JSON.stringify(chunk, null, 2)];
     }
 
-    // 动态计算chunk大小（参考YouTube chunker算法）
+    // Dynamic chunk size calculation (inspired by YouTube chunker algorithm)
     const totalLength = content.length;
-    const chunkCount = Math.max(1, Math.floor(totalLength / Chunker.TARGET_CHUNK_SIZE)); // 至少1个chunk
+    const chunkCount = Math.max(1, Math.floor(totalLength / Chunker.TARGET_CHUNK_SIZE)); // At least 1 chunk
     const adjustedChunkSize = Math.floor(totalLength / chunkCount);
 
-    console.log(`智能换行分割: 总长度=${totalLength}, chunk数量=${chunkCount}, 调整后chunk大小=${adjustedChunkSize}`);
+    console.log(`Smart newline splitting: total length=${totalLength}, chunk count=${chunkCount}, adjusted chunk size=${adjustedChunkSize}`);
 
     const chunks: string[] = [];
     let position = 0;
     let currentChunkIndex = 0;
 
     while (position < content.length && currentChunkIndex < chunkCount) {
-      // 计算这个chunk的结束位置
+      // Calculate end position for this chunk
       const chunkEnd = this._findNewlineChunkEnd(content, position, adjustedChunkSize, currentChunkIndex, chunkCount);
 
-      // 提取chunk内容
+      // Extract chunk content
       const chunkContent = content.slice(position, chunkEnd).trim();
 
-      if (chunkContent) { // 只有非空内容才添加
+      if (chunkContent) { // Only add non-empty content
         const chunk: ChunkData = {
           context: context,
           content: chunkContent
@@ -268,7 +287,7 @@ export class Chunker {
         chunks.push(chunkJson);
       }
 
-      // 移动到下一个位置
+      // Move to next position
       position = chunkEnd;
       currentChunkIndex++;
     }
@@ -277,53 +296,53 @@ export class Chunker {
   }
 
   /**
-   * 找到基于换行符的chunk结束位置
+   * Find newline-based chunk end position
    */
   private _findNewlineChunkEnd(content: string, startPos: number, chunkSize: number, currentChunkIndex: number, totalChunkCount: number): number {
-    // 如果是最后一个chunk，直接返回内容结尾
+    // If last chunk, return content end directly
     if (currentChunkIndex === totalChunkCount - 1) {
       return content.length;
     }
 
-    // 如果剩余内容不足chunkSize字符，直接返回结尾
+    // If remaining content less than chunkSize characters, return end directly
     if (startPos + chunkSize >= content.length) {
       return content.length;
     }
 
     const targetPos = startPos + chunkSize;
 
-    // 向前找最近的换行符
+    // Search backward for nearest newline
     let backwardPos: number | null = null;
-    for (let i = targetPos; i > startPos; i--) { // 不能超过startPos
+    for (let i = targetPos; i > startPos; i--) { // Cannot exceed startPos
       if (content[i] === '\n') {
-        backwardPos = i + 1; // 换行符后的位置
+        backwardPos = i + 1; // Position after newline
         break;
       }
     }
 
-    // 向后找最近的换行符
+    // Search forward for nearest newline
     let forwardPos: number | null = null;
     for (let i = targetPos; i < content.length; i++) {
       if (content[i] === '\n') {
-        forwardPos = i + 1; // 换行符后的位置
+        forwardPos = i + 1; // Position after newline
         break;
       }
     }
 
-    // 选择距离最近的换行符
+    // Choose nearest newline
     if (backwardPos === null && forwardPos === null) {
-      // 没找到换行符，返回内容结尾
+      // No newline found, return content end
       return content.length;
     } else if (backwardPos === null) {
-      // 只有向后的换行符
+      // Only forward newline
       return forwardPos!;
     } else if (forwardPos === null) {
-      // 只有向前的换行符
+      // Only backward newline
       return backwardPos;
     } else {
-      // 两个都有，选择距离最近的
-      const backwardDistance = targetPos - (backwardPos - 1); // backwardPos已经+1了
-      const forwardDistance = (forwardPos - 1) - targetPos;    // forwardPos已经+1了
+      // Both exist, choose nearest
+      const backwardDistance = targetPos - (backwardPos - 1); // backwardPos already +1
+      const forwardDistance = (forwardPos - 1) - targetPos;    // forwardPos already +1
 
       if (backwardDistance <= forwardDistance) {
         return backwardPos;
@@ -334,7 +353,7 @@ export class Chunker {
   }
 
   /**
-   * 按第一个H标题分离context和content
+   * Split context and content by first H header
    */
   private _splitByFirstHeader(text: string): [string, string] {
     const lines = text.split('\n');
@@ -348,7 +367,7 @@ export class Chunker {
       }
     }
 
-    // 没有找到H标题
+    // No H header found
     return ["", text.trim()];
   }
 }

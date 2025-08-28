@@ -15,7 +15,7 @@ const appConfig: AppConfig = {
     password: process.env['DB_PASSWORD'] || '',
     ssl: process.env['DB_SSL'] === 'true',
   },
-  processing: {
+  batchProcessing: {
     batchSize: parseInt(process.env['BATCH_SIZE'] || '25'),
   },
   logging: {
@@ -43,12 +43,12 @@ async function main(): Promise<void> {
   await dbManager.initialize();
   logger.info('Database initialization completed');
 
-  const collector = new AppleDocCollector(dbManager, logger);
+  const collector = new AppleDocCollector(dbManager, logger, appConfig.batchProcessing);
 
   logger.info('Apple RAG Collector starting...', {
     version: '2.0.0',
     mode: 'optimized-batch-processing',
-    batchSize: appConfig.processing.batchSize,
+    batchSize: appConfig.batchProcessing.batchSize,
     database: `${appConfig.database.host}:${appConfig.database.port}/${appConfig.database.database}`,
   });
 
@@ -77,7 +77,7 @@ async function main(): Promise<void> {
   // Main processing loop - continuous processing while data exists
   while (true) {
     try {
-      const hasData = await collector.execute(appConfig.processing.batchSize);
+      const hasData = await collector.execute();
 
       // No data found - exit immediately
       if (!hasData) {

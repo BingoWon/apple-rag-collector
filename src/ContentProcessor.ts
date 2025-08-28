@@ -1,17 +1,40 @@
-import { type AppleAPIResponse, type DocumentContent } from './types/index.js';
+import { type AppleAPIResponse, type DocumentContent, type BatchConfig, type BatchResult } from './types/index.js';
+import { BatchErrorHandler } from './utils/batch-error-handler.js';
 
 class ContentProcessor {
   private static readonly BASE_URL = 'https://developer.apple.com' as const;
 
-  processDocument(docData: AppleAPIResponse): DocumentContent {
-    const { titles, content } = this.cleanAndSeparateContent(docData);
-    const extractedUrls = this.extractAllUrls(docData);
+  constructor(private readonly config: BatchConfig) {}
 
-    return {
-      title: titles.trim() || null,
-      content: this.normalizeLineTerminators(content),
-      extractedUrls,
-    };
+  async processDocuments(apiResults: BatchResult<AppleAPIResponse>[]): Promise<BatchResult<DocumentContent>[]> {
+    const results: BatchResult<DocumentContent>[] = [];
+
+    for (let i = 0; i < apiResults.length; i += this.config.batchSize) {
+      const batch = apiResults.slice(i, i + this.config.batchSize);
+      const batchResults = await Promise.all(batch.map(item => this.processSingleDocument(item)));
+      results.push(...batchResults);
+    }
+
+    return results;
+  }
+
+  private async processSingleDocument(item: BatchResult<AppleAPIResponse>): Promise<BatchResult<DocumentContent>> {
+    if (!item.data) {
+      return BatchErrorHandler.failure(item.url, item.error || 'No API data available');
+    }
+
+    return BatchErrorHandler.safeExecute(item.url, () => {
+      const { titles, content } = this.cleanAndSeparateContent(item.data!);
+      const extractedUrls = this.extractAllUrls(item.data!);
+
+      const documentContent: DocumentContent = {
+        title: titles.trim() || null,
+        content: this.normalizeLineTerminators(content),
+        extractedUrls,
+      };
+
+      return documentContent;
+    });
   }
 
   private cleanAndSeparateContent(docData: AppleAPIResponse): { titles: string; content: string } {
