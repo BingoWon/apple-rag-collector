@@ -1,0 +1,8 @@
+# Embedding API Keys
+# Add your API keys here, one per line
+# Failed keys will be automatically removed
+
+# Example:
+# sk-your-api-key-1
+# sk-your-api-key-2
+# sk-your-api-key-3
