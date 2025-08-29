@@ -99,10 +99,6 @@ export class Chunker {
       return [];
     }
 
-    console.log(
-      `Starting smart chunking, document length: ${text.length} characters`
-    );
-
     if (text.length <= Chunker.TARGET_CHUNK_SIZE) {
       return [this._createChunkJson(title, text)];
     }
@@ -118,9 +114,6 @@ export class Chunker {
     const targetChunkCount = Math.max(
       1,
       Math.floor(content.length / Chunker.TARGET_CHUNK_SIZE)
-    );
-    console.log(
-      `Dynamic calculation: ${content.length} characters → ${targetChunkCount} chunks`
     );
 
     const chunks: string[] = [];
@@ -155,9 +148,6 @@ export class Chunker {
       start = splitPos;
     }
 
-    console.log(
-      `Adaptive splitting completed: generated ${chunks.length} chunks (target: ${targetChunkCount})`
-    );
     return chunks;
   }
 

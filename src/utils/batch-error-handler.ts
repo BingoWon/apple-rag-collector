@@ -1,20 +1,20 @@
 /**
- * 统一的批处理错误处理工具
- * 消除各组件中的重复错误处理代码
+ * Unified batch error handling utility
+ * Eliminates duplicate error handling code across components
  */
 
 import { type BatchResult } from "../types/index.js";
 
 export class BatchErrorHandler {
   /**
-   * 创建成功的批处理结果
+   * Create successful batch result
    */
   static success<T>(url: string, data: T): BatchResult<T> {
     return { url, data };
   }
 
   /**
-   * 创建失败的批处理结果
+   * Create failed batch result
    */
   static failure<T>(url: string, error: unknown): BatchResult<T> {
     const errorMessage =
@@ -23,7 +23,7 @@ export class BatchErrorHandler {
   }
 
   /**
-   * 安全执行函数并返回批处理结果
+   * Safely execute function and return batch result
    */
   static async safeExecute<T>(
     url: string,
@@ -38,14 +38,14 @@ export class BatchErrorHandler {
   }
 
   /**
-   * 检查是否为永久错误
+   * Check if error is permanent
    */
   static isPermanentError(error: string): boolean {
     return error.includes("PERMANENT_ERROR:");
   }
 
   /**
-   * 提取永久错误状态码
+   * Extract permanent error status code
    */
   static extractPermanentErrorCode(error: string): string {
     const match = error.match(/PERMANENT_ERROR:(\d+):/);

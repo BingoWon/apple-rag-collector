@@ -1,11 +1,11 @@
 /**
  * Shared type definitions for the Apple RAG Collector
  *
- * 纯批处理架构 - 永远不会有单个处理的情况
- * 所有类型定义都基于批量处理设计
+ * Pure batch processing architecture - never single processing
+ * All type definitions are based on batch processing design
  */
 
-// 批处理配置接口
+// Batch processing configuration interface
 interface BatchConfig {
   readonly batchSize: number;
 }
@@ -54,7 +54,7 @@ interface ChunkRecord {
   readonly embedding: number[] | null;
 }
 
-// 批处理结果接口 - 简化为核心类型
+// Batch result interface - simplified to core types
 interface BatchResult<T> {
   readonly url: string;
   readonly data: T | null;
@@ -100,14 +100,14 @@ interface AppleAPIResponse {
 interface DatabaseStats {
   readonly total: number;
   readonly avgCollectCount: number;
-  readonly collectedCount: number; // CollectCount > 0 的记录数
-  readonly collectedPercentage: string; // CollectCount > 0 的比例（百分比格式）
-  readonly maxCollectCount: number; // collect_count 的最大值
-  readonly minCollectCount: number; // collect_count 的最小值
+  readonly collectedCount: number; // Number of records with CollectCount > 0
+  readonly collectedPercentage: string; // Percentage of records with CollectCount > 0
+  readonly maxCollectCount: number; // Maximum value of collect_count
+  readonly minCollectCount: number; // Minimum value of collect_count
   readonly collectCountDistribution: Record<
     string,
     { count: number; percentage: string }
-  >; // 每个collect_count值的分布
+  >; // Distribution of each collect_count value
 }
 
 export type {

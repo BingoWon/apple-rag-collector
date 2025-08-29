@@ -37,7 +37,7 @@ const pool = new Pool({
 
 async function main(): Promise<void> {
   const logger = new Logger(appConfig.logging.level as LogLevel);
-  const dbManager = new PostgreSQLManager(pool);
+  const dbManager = new PostgreSQLManager(pool, logger);
 
   // Initialize database (create tables and indexes if they don't exist)
   logger.info("Initializing database...");
@@ -82,7 +82,7 @@ async function main(): Promise<void> {
       logger.info("Database connections closed");
       process.exit(0);
     } catch (error) {
-      logger.error("Error during shutdown", {
+      await logger.error("Error during shutdown", {
         error: error instanceof Error ? error.message : "Unknown error",
       });
       process.exit(1);
@@ -90,22 +90,21 @@ async function main(): Promise<void> {
   }
 
   // Main processing loop - continuous processing while data exists
-  let batchCount = 0;
-  const PROGRESS_REPORT_INTERVAL = 1000; // 每1000个批次发送一次进度报告
+  const PROGRESS_REPORT_INTERVAL = 1000; // Send progress report every 1000 batches
 
   while (true) {
     try {
-      const hasData = await collector.execute();
+      const result = await collector.execute();
 
       // No data found - exit immediately
-      if (!hasData) {
+      if (!result.hasData) {
         logger.info("No more data to process, exiting...");
 
-        // 发送最终统计信息
+        // Send final statistics
         if (telegramNotifier.isEnabled()) {
           const finalStats = await dbManager.getStats();
           await telegramNotifier.notifyInfo(
-            `🏁 Processing completed after ${batchCount} batches\n\n` +
+            `🏁 Processing completed after ${result.batchNumber} batches\n\n` +
               `📊 Final Statistics:\n` +
               `• Total records: ${finalStats.total}\n` +
               `• Collected: ${finalStats.collectedCount} (${finalStats.collectedPercentage})\n` +
@@ -118,26 +117,24 @@ async function main(): Promise<void> {
         process.exit(0);
       }
 
-      // 增加批次计数
-      batchCount++;
-
-      // 每1000个批次发送进度报告
-      if (batchCount % PROGRESS_REPORT_INTERVAL === 0) {
+      // Send progress report every 1000 batches
+      if (result.batchNumber % PROGRESS_REPORT_INTERVAL === 0) {
         if (telegramNotifier.isEnabled()) {
           try {
             const stats = await dbManager.getStats();
             await telegramNotifier.notifyInfo(
-              `📈 Progress Report - Batch ${batchCount}\n\n` +
+              `📈 Progress Report - Batch ${result.batchNumber}\n\n` +
                 `📊 Current Statistics:\n` +
                 `• Total records: ${stats.total}\n` +
                 `• Collected: ${stats.collectedCount} (${stats.collectedPercentage})\n` +
                 `• Avg collect count: ${stats.avgCollectCount}\n` +
                 `• Range: ${stats.minCollectCount} - ${stats.maxCollectCount}\n\n` +
-                `⚡ Batches processed: ${batchCount}`
+                `⚡ Batches processed: ${result.batchNumber}\n` +
+                `🔧 Session chunks generated: ${result.totalChunks}`
             );
           } catch (statsError) {
-            // 静默处理统计获取错误，不影响主流程
-            logger.warn("Failed to get stats for progress report", {
+            // Silent handling of stats errors, don't affect main flow
+            await logger.warn("Failed to get stats for progress report", {
               error:
                 statsError instanceof Error
                   ? statsError.message
@@ -149,28 +146,24 @@ async function main(): Promise<void> {
 
       // If data was processed, immediately continue to next batch
     } catch (error) {
-      logger.error("Batch processing failed", {
+      await logger.error("Batch processing failed", {
         error: error instanceof Error ? error.message : "Unknown error",
         stack: error instanceof Error ? error.stack : undefined,
       });
 
-      // Exit immediately on error
       await dbManager.close();
       process.exit(1);
     }
   }
 }
 
-// Start the application
 main().catch(async (error) => {
-  console.error("Failed to start Apple RAG Collector:", error);
-
-  // 发送启动失败通知
-  if (telegramNotifier.isEnabled()) {
-    await telegramNotifier.notifyError(
-      error instanceof Error ? error : new Error(String(error))
-    );
-  }
+  // Create emergency logger for startup failures
+  const emergencyLogger = new Logger("error" as LogLevel);
+  await emergencyLogger.error("Failed to start Apple RAG Collector", {
+    error: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
+  });
 
   process.exit(1);
 });

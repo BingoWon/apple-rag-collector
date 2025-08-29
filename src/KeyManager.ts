@@ -1,26 +1,29 @@
 /**
- * API Key管理器 - 最巧妙精简有效的实现
+ * API Key Manager - Elegant and efficient implementation
  *
- * 一个文本文件，每行一个key，失效就删除。
- * 没有复杂的JSON，没有状态跟踪，没有冗余功能。
+ * Simple text file with one key per line, remove failed keys.
+ * No complex JSON, no state tracking, no redundant features.
  */
 
 import fs from "fs";
 import path from "path";
+import { Logger } from "./utils/logger.js";
 
 export class KeyManager {
   /**
-   * API Key管理器 - 优雅现代精简的全局最优解
+   * API Key Manager - Elegant modern minimal global optimal solution
    */
 
   private keysFile: string;
   private currentIndex: number = 0;
   private readonly lock = new Map<string, boolean>(); // Simple lock mechanism
+  private readonly logger: Logger;
 
-  constructor(keysFile: string = "api_keys.txt") {
+  constructor(keysFile: string = "api_keys.txt", logger?: Logger) {
     this.keysFile = keysFile;
+    this.logger = logger || new Logger("info");
 
-    // 确保文件存在
+    // Ensure file exists
     if (!fs.existsSync(this.keysFile)) {
       const dir = path.dirname(this.keysFile);
       if (!fs.existsSync(dir)) {
@@ -31,7 +34,7 @@ export class KeyManager {
   }
 
   /**
-   * 获取当前索引的key
+   * Get current key by index
    */
   getCurrentKey(): string {
     this.acquireLock();
@@ -62,7 +65,7 @@ export class KeyManager {
   }
 
   /**
-   * 读取所有keys
+   * Read all keys from file
    */
   private readKeys(): string[] {
     try {
@@ -80,7 +83,7 @@ export class KeyManager {
   }
 
   /**
-   * 切换到下一个可用key
+   * Switch to next available key
    */
   switchToNextKey(): string {
     this.acquireLock();
@@ -90,7 +93,7 @@ export class KeyManager {
         throw new Error("No API keys available");
       }
 
-      // 切换到下一个key
+      // Switch to next key
       this.currentIndex = (this.currentIndex + 1) % keys.length;
 
       const currentKey = keys[this.currentIndex];
@@ -98,7 +101,9 @@ export class KeyManager {
         throw new Error("Invalid key at switched index");
       }
 
-      console.log(`🔄 Switched to next key: ${currentKey.slice(0, 20)}...`);
+      this.logger.debug(
+        `🔄 Switched to next key: ${currentKey.slice(0, 20)}...`
+      );
       return currentKey;
     } finally {
       this.releaseLock();
@@ -106,7 +111,7 @@ export class KeyManager {
   }
 
   /**
-   * 删除失效的key
+   * Remove failed key
    */
   async removeKey(key: string): Promise<boolean> {
     this.acquireLock();
@@ -118,10 +123,10 @@ export class KeyManager {
         return false;
       }
 
-      // 删除失效key
+      // Remove failed key
       keys.splice(keyIndex, 1);
 
-      // 调整当前索引
+      // Adjust current index
       if (keyIndex <= this.currentIndex && this.currentIndex > 0) {
         this.currentIndex -= 1;
       } else if (this.currentIndex >= keys.length && keys.length > 0) {
@@ -131,7 +136,7 @@ export class KeyManager {
       // 写回文件
       fs.writeFileSync(this.keysFile, keys.join("\n"));
 
-      console.log(`🗑️ Removed failed key: ${key.slice(0, 20)}...`);
+      this.logger.debug(`🗑️ Removed failed key: ${key.slice(0, 20)}...`);
       return true;
     } finally {
       this.releaseLock();
@@ -152,7 +157,7 @@ export class KeyManager {
   }
 
   /**
-   * 添加新key
+   * Add new key
    */
   async addKey(key: string): Promise<void> {
     this.acquireLock();

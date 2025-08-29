@@ -4,12 +4,15 @@ import {
   type DatabaseStats,
   type ChunkRecord,
 } from "./types/index.js";
+import { Logger } from "./utils/logger.js";
 
 class PostgreSQLManager {
   private pool: Pool;
+  private readonly logger: Logger;
 
-  constructor(pool: Pool) {
+  constructor(pool: Pool, logger?: Logger) {
     this.pool = pool;
+    this.logger = logger || new Logger("info");
   }
 
   async initialize(): Promise<void> {
@@ -17,6 +20,9 @@ class PostgreSQLManager {
     try {
       // Enable required extensions
       await client.query('CREATE EXTENSION IF NOT EXISTS "vector"');
+
+      // Migrate existing table structure if needed
+      await this.migrateDatabase(client);
 
       // Create pages table if it doesn't exist
       await client.query(`
@@ -90,12 +96,64 @@ class PostgreSQLManager {
     }
   }
 
+  /**
+   * Migrate existing database structure to match current schema
+   */
+  private async migrateDatabase(client: any): Promise<void> {
+    try {
+      // Check if pages table exists and get its structure
+      const tableExists = await client.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables
+          WHERE table_schema = 'public'
+          AND table_name = 'pages'
+        );
+      `);
+
+      if (tableExists.rows[0].exists) {
+        // Check for missing columns and add them
+        const columns = await client.query(`
+          SELECT column_name
+          FROM information_schema.columns
+          WHERE table_name = 'pages' AND table_schema = 'public';
+        `);
+
+        const existingColumns = columns.rows.map((row: any) => row.column_name);
+
+        // Add missing columns
+        if (!existingColumns.includes('collect_count')) {
+          await client.query('ALTER TABLE pages ADD COLUMN collect_count INTEGER NOT NULL DEFAULT 0');
+          this.logger.info('Added collect_count column to pages table');
+        }
+
+        if (!existingColumns.includes('raw_json')) {
+          await client.query('ALTER TABLE pages ADD COLUMN raw_json JSONB');
+          this.logger.info('Added raw_json column to pages table');
+        }
+
+        if (!existingColumns.includes('title')) {
+          await client.query('ALTER TABLE pages ADD COLUMN title TEXT');
+          this.logger.info('Added title column to pages table');
+        }
+
+        if (!existingColumns.includes('updated_at')) {
+          await client.query('ALTER TABLE pages ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE');
+          this.logger.info('Added updated_at column to pages table');
+        }
+      }
+    } catch (error) {
+      this.logger.debug('Database migration check completed', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
   async batchInsertUrls(urls: string[]): Promise<number> {
     if (urls.length === 0) return 0;
 
     const client = await this.pool.connect();
     try {
-      // 真正的批处理：一次性插入所有URL，使用数据库生成UUID
+      // True batch processing: insert all URLs at once, using database-generated UUIDs
       const values = urls
         .map((_, index) => {
           const offset = index * 2;
@@ -223,7 +281,7 @@ class PostgreSQLManager {
     try {
       await client.query("BEGIN");
 
-      // 1. 先删除需要删除的记录
+      // 1. Delete records that need to be deleted first
       if (deleteIds.length > 0) {
         const deleteParams = deleteIds
           .map((_, index) => `$${index + 1}`)
@@ -234,7 +292,7 @@ class PostgreSQLManager {
         );
       }
 
-      // 2. 批量插入成功和失败记录
+      // 2. Batch insert success and failure records
       const allRecords = [...successRecords, ...failureRecords];
       if (allRecords.length > 0) {
         await this.batchInsertRecordsInTransaction(client, allRecords);
@@ -250,7 +308,7 @@ class PostgreSQLManager {
   }
 
   /**
-   * 轻量级批量更新：仅更新 collect_count，保持其他字段不变
+   * Lightweight batch update: only update collect_count, keep other fields unchanged
    */
   async batchUpdateCollectCountOnly(
     updates: Array<{ id: string; collect_count: number }>
@@ -261,7 +319,7 @@ class PostgreSQLManager {
     try {
       await client.query("BEGIN");
 
-      // 构建 CASE WHEN 语句进行批量更新
+      // Build CASE WHEN statement for batch update
       const caseStatements = updates
         .map((_, index) => `WHEN id = $${index * 2 + 1} THEN $${index * 2 + 2}`)
         .join(" ");
@@ -279,12 +337,15 @@ class PostgreSQLManager {
       );
 
       await client.query("COMMIT");
-      console.log(
+      this.logger.debug(
         `📊 Updated collect_count for ${updates.length} unchanged records`
       );
     } catch (error) {
       await client.query("ROLLBACK");
-      console.error("❌ Failed to update collect counts:", error);
+      await this.logger.error("Failed to update collect counts", {
+        error: error instanceof Error ? error.message : String(error),
+        updatesCount: updates.length,
+      });
       throw error;
     } finally {
       client.release();
@@ -292,13 +353,13 @@ class PostgreSQLManager {
   }
 
   /**
-   * 在已有事务内批量插入记录
+   * Batch insert records within existing transaction
    *
-   * 此方法专门用于复杂事务场景，如 batchProcessRecords 中的删除+插入操作。
-   * 不管理数据库连接和事务，由调用者负责事务的开始、提交和回滚。
+   * This method is specifically for complex transaction scenarios, such as delete+insert operations in batchProcessRecords.
+   * Does not manage database connections and transactions, caller is responsible for transaction begin, commit and rollback.
    *
-   * @param client - 已连接的数据库客户端（必须已在事务中）
-   * @param records - 要插入的数据库记录数组
+   * @param client - Connected database client (must already be in transaction)
+   * @param records - Array of database records to insert
    */
   private async batchInsertRecordsInTransaction(
     client: any,
@@ -357,7 +418,7 @@ class PostgreSQLManager {
           `DELETE FROM chunks WHERE url IN (${urlParams})`,
           urls
         );
-        console.log(
+        this.logger.debug(
           `🗑️ Deleted ${deleteResult.rowCount || 0} existing chunks for ${urls.length} URLs`
         );
       }
@@ -382,12 +443,15 @@ class PostgreSQLManager {
       await client.query(insertQuery, params);
       await client.query("COMMIT");
 
-      console.log(
+      this.logger.debug(
         `✅ Replaced chunks: ${urls.length} URLs, ${chunks.length} new chunks`
       );
     } catch (error) {
       await client.query("ROLLBACK");
-      console.error("❌ Failed to replace chunks:", error);
+      await this.logger.error("Failed to replace chunks", {
+        error: error instanceof Error ? error.message : String(error),
+        chunksCount: chunks.length,
+      });
       throw error;
     } finally {
       client.release();
