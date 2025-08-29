@@ -25,35 +25,31 @@ class Logger {
   }
 
   private formatMessage(
-    level: LogLevel,
     message: string,
     data?: Record<string, unknown>
   ): string {
-    const timestamp = new Date().toISOString();
-    const logEntry = {
-      timestamp,
-      level: level.toUpperCase(),
-      message,
-      ...(data && Object.keys(data).length > 0 ? { data } : {}),
-    };
-    return JSON.stringify(logEntry);
+    // Unified simple text format - infrastructure handles timestamps
+    if (data && Object.keys(data).length > 0) {
+      return `${message} ${JSON.stringify(data)}`;
+    }
+    return message;
   }
 
   debug(message: string, data?: Record<string, unknown>): void {
     if (this.shouldLog("debug")) {
-      console.log(this.formatMessage("debug", message, data));
+      console.log(this.formatMessage(message, data));
     }
   }
 
   info(message: string, data?: Record<string, unknown>): void {
     if (this.shouldLog("info")) {
-      console.log(this.formatMessage("info", message, data));
+      console.log(this.formatMessage(message, data));
     }
   }
 
   async warn(message: string, data?: Record<string, unknown>): Promise<void> {
     if (this.shouldLog("warn")) {
-      console.warn(this.formatMessage("warn", message, data));
+      console.warn(this.formatMessage(message, data));
       try {
         await telegramNotifier.notifyWarning(message);
       } catch {}
@@ -62,7 +58,7 @@ class Logger {
 
   async error(message: string, data?: Record<string, unknown>): Promise<void> {
     if (this.shouldLog("error")) {
-      console.error(this.formatMessage("error", message, data));
+      console.error(this.formatMessage(message, data));
       try {
         await telegramNotifier.notifyError(new Error(message));
       } catch {}

@@ -90,7 +90,7 @@ async function main(): Promise<void> {
   }
 
   // Main processing loop - continuous processing while data exists
-  const PROGRESS_REPORT_INTERVAL = 1000; // Send progress report every 1000 batches
+  const PROGRESS_REPORT_INTERVAL = 200; // Send progress report every 200 batches
 
   while (true) {
     try {

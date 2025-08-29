@@ -121,29 +121,33 @@ class PostgreSQLManager {
         const existingColumns = columns.rows.map((row: any) => row.column_name);
 
         // Add missing columns
-        if (!existingColumns.includes('collect_count')) {
-          await client.query('ALTER TABLE pages ADD COLUMN collect_count INTEGER NOT NULL DEFAULT 0');
-          this.logger.info('Added collect_count column to pages table');
+        if (!existingColumns.includes("collect_count")) {
+          await client.query(
+            "ALTER TABLE pages ADD COLUMN collect_count INTEGER NOT NULL DEFAULT 0"
+          );
+          this.logger.info("Added collect_count column to pages table");
         }
 
-        if (!existingColumns.includes('raw_json')) {
-          await client.query('ALTER TABLE pages ADD COLUMN raw_json JSONB');
-          this.logger.info('Added raw_json column to pages table');
+        if (!existingColumns.includes("raw_json")) {
+          await client.query("ALTER TABLE pages ADD COLUMN raw_json JSONB");
+          this.logger.info("Added raw_json column to pages table");
         }
 
-        if (!existingColumns.includes('title')) {
-          await client.query('ALTER TABLE pages ADD COLUMN title TEXT');
-          this.logger.info('Added title column to pages table');
+        if (!existingColumns.includes("title")) {
+          await client.query("ALTER TABLE pages ADD COLUMN title TEXT");
+          this.logger.info("Added title column to pages table");
         }
 
-        if (!existingColumns.includes('updated_at')) {
-          await client.query('ALTER TABLE pages ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE');
-          this.logger.info('Added updated_at column to pages table');
+        if (!existingColumns.includes("updated_at")) {
+          await client.query(
+            "ALTER TABLE pages ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE"
+          );
+          this.logger.info("Added updated_at column to pages table");
         }
       }
     } catch (error) {
-      this.logger.debug('Database migration check completed', {
-        error: error instanceof Error ? error.message : String(error)
+      this.logger.debug("Database migration check completed", {
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }
