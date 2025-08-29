@@ -590,7 +590,21 @@ DB_NAME=apple_rag_collector
 DB_USER=postgres
 DB_PASSWORD=your_password
 DB_SSL=false
+
+# Embedding API Configuration
+EMBEDDING_MODEL=Qwen/Qwen3-Embedding-4B
+EMBEDDING_DIM=2560
+EMBEDDING_API_BASE_URL=https://api.siliconflow.cn/v1/embeddings
+EMBEDDING_API_TIMEOUT=30  # API timeout in seconds (increased from 10s to handle large batches)
+
+# Telegram Bot Notifications (Optional)
+TELEGRAM_BOT_URL=https://api.telegram.org/bot<YOUR_BOT_TOKEN>/sendMessage?chat_id=<YOUR_CHAT_ID>
 ```
+
+**API Keys Management:**
+- Create `api_keys.txt` in the project root
+- Add one API key per line for automatic rotation
+- The system will automatically switch keys on rate limits or failures
 
 
 
@@ -702,7 +716,7 @@ The system uses **dual-path processing** for maximum efficiency:
 ### Production Ready
 - **✅ Modern Architecture**: TypeScript + PostgreSQL + Batch Processing
 - **✅ Performance Optimized**: True batch operations with indexing
-- **✅ Error Handling**: Comprehensive error recovery and logging
+- **✅ Error Handling**: Comprehensive error recovery and logging with timeout detection
 - **✅ Configurable**: Environment-specific configurations
 
 ### Processing Features
@@ -722,6 +736,64 @@ The system uses **dual-path processing** for maximum efficiency:
 - **🎯 Priority Processing**: Always processes records with lowest collect_count first
 - **📈 Incremental Updates**: Each processing increments collect_count and updated_at
 - **🔄 Cycling Logic**: When all records processed, starts over with lowest collect_count
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+#### API Timeout Errors
+**Symptoms:**
+- Error: "This operation was aborted"
+- Process exits with AbortError
+- Logs show timeout-related messages
+
+**Solutions:**
+1. **Increase timeout**: Set `EMBEDDING_API_TIMEOUT=60` (or higher)
+2. **Reduce batch size**: Set `BATCH_SIZE=10` (or lower)
+3. **Check API keys**: Ensure `api_keys.txt` contains valid keys
+
+**Enhanced Error Logging:**
+The system now provides detailed timeout error information:
+```
+⏰ Embedding API timeout (30000ms) - Batch size: 20 texts
+🚨 Batch processing failed due to API timeout
+Suggestion: Consider increasing EMBEDDING_API_TIMEOUT or reducing BATCH_SIZE
+```
+
+#### API Key Issues
+**Symptoms:**
+- 401/403 errors
+- "API key error" messages
+- Automatic key switching
+
+**Solutions:**
+1. Verify API keys in `api_keys.txt`
+2. Check API key quotas and limits
+3. Add more API keys for better rotation
+
+#### Rate Limiting
+**Symptoms:**
+- 429 errors
+- "Rate limit exceeded" messages
+- Frequent key switching
+
+**Solutions:**
+1. Add more API keys to `api_keys.txt`
+2. Reduce `BATCH_SIZE` to lower API load
+3. Check API provider rate limits
+
+### Monitoring and Logs
+
+**Real-time Monitoring:**
+- Use `pm2 logs apple-rag-collector` for live logs
+- Telegram notifications for critical errors
+- Detailed error context in all log messages
+
+**Log Levels:**
+- `LOG_LEVEL=debug` - Detailed processing information
+- `LOG_LEVEL=info` - Standard operational logs
+- `LOG_LEVEL=warn` - Warnings and recoverable errors
+- `LOG_LEVEL=error` - Critical errors only
 - **⚡ Data Freshness**: Ensures Apple documentation is always current
 - **🛑 Smart Exit**: Exits gracefully when no data exists in database
 
