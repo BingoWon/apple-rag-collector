@@ -1,10 +1,10 @@
-import { AppleAPIClient } from './AppleAPIClient.js';
-import { ContentProcessor } from './ContentProcessor.js';
-import { Chunker } from './Chunker.js';
-import { createEmbeddings } from './EmbeddingProvider.js';
-import { PostgreSQLManager } from './PostgreSQLManager.js';
-import { type DatabaseRecord, type BatchConfig } from './types/index.js';
-import { Logger } from './utils/logger.js';
+import { AppleAPIClient } from "./AppleAPIClient.js";
+import { ContentProcessor } from "./ContentProcessor.js";
+import { Chunker } from "./Chunker.js";
+import { createEmbeddings } from "./EmbeddingProvider.js";
+import { PostgreSQLManager } from "./PostgreSQLManager.js";
+import { type DatabaseRecord, type BatchConfig } from "./types/index.js";
+import { Logger } from "./utils/logger.js";
 
 interface BatchResult {
   successRecords: DatabaseRecord[];
@@ -29,7 +29,11 @@ class AppleDocCollector {
 
   private readonly config: BatchConfig;
 
-  constructor(dbManager: PostgreSQLManager, _logger: Logger, config: BatchConfig) {
+  constructor(
+    dbManager: PostgreSQLManager,
+    _logger: Logger,
+    config: BatchConfig
+  ) {
     this.dbManager = dbManager;
     this.config = config;
     this.apiClient = new AppleAPIClient();
@@ -45,7 +49,11 @@ class AppleDocCollector {
     }
 
     const result = await this.processBatch(records);
-    await this.dbManager.batchProcessRecords(result.successRecords, result.failureRecords, result.deleteIds);
+    await this.dbManager.batchProcessRecords(
+      result.successRecords,
+      result.failureRecords,
+      result.deleteIds
+    );
 
     if (result.extractedUrls.size > 0) {
       await this.dbManager.batchInsertUrls([...result.extractedUrls]);
@@ -55,69 +63,85 @@ class AppleDocCollector {
   }
 
   private async processBatch(records: DatabaseRecord[]): Promise<BatchResult> {
-    const urls = records.map(r => r.url);
+    const urls = records.map((r) => r.url);
 
     // Stage 1: Batch Collecting
     const collectResults = await this.apiClient.fetchDocuments(urls);
 
     // Stage 2: Intelligent Content Comparison
-    const comparisonResults = this.compareContentChanges(records, collectResults);
+    const comparisonResults = this.compareContentChanges(
+      records,
+      collectResults
+    );
 
     // Separate changed and unchanged records
-    const changedResults = comparisonResults.filter(r => r.hasChanged);
-    const unchangedResults = comparisonResults.filter(r => !r.hasChanged && !r.error);
+    const changedResults = comparisonResults.filter((r) => r.hasChanged);
+    const unchangedResults = comparisonResults.filter(
+      (r) => !r.hasChanged && !r.error
+    );
 
     // Log intelligent comparison results
     if (unchangedResults.length > 0) {
-      console.log(`🔄 Content unchanged: ${unchangedResults.length} URLs (skipping processing)`);
+      console.log(
+        `🔄 Content unchanged: ${unchangedResults.length} URLs (skipping processing)`
+      );
     }
     if (changedResults.length > 0) {
-      console.log(`📝 Content changed: ${changedResults.length} URLs (full processing)`);
+      console.log(
+        `📝 Content changed: ${changedResults.length} URLs (full processing)`
+      );
     }
 
     // Stage 3: Process Only Changed Content
-    const processResults = changedResults.length > 0
-      ? await this.contentProcessor.processDocuments(changedResults.map(r => r.collectResult))
-      : [];
+    const processResults =
+      changedResults.length > 0
+        ? await this.contentProcessor.processDocuments(
+            changedResults.map((r) => r.collectResult)
+          )
+        : [];
 
     // Stage 4: Chunk Only Changed Content
-    const chunkResults = processResults.length > 0
-      ? this.chunker.chunkTexts(
-          processResults.filter(r => r.data).map(r => ({
-            url: r.url,
-            title: r.data!.title,
-            content: r.data!.content
-          }))
-        )
-      : [];
+    const chunkResults =
+      processResults.length > 0
+        ? this.chunker.chunkTexts(
+            processResults
+              .filter((r) => r.data)
+              .map((r) => ({
+                url: r.url,
+                title: r.data!.title,
+                content: r.data!.content,
+              }))
+          )
+        : [];
 
     // Stage 5: Embed Only Changed Content
-    const allChunks = chunkResults.flatMap(r =>
-      r.data ? r.data.map(chunk => ({ url: r.url, chunk })) : []
+    const allChunks = chunkResults.flatMap((r) =>
+      r.data ? r.data.map((chunk) => ({ url: r.url, chunk })) : []
     );
 
     // Parse JSON chunks and combine title + content for embedding
-    const embeddingTexts = allChunks.map(c => {
+    const embeddingTexts = allChunks.map((c) => {
       try {
         const parsed = JSON.parse(c.chunk);
         // Combine title and content for optimal semantic representation
-        return parsed.title ? `${parsed.title}\n\n${parsed.content}` : parsed.content;
+        return parsed.title
+          ? `${parsed.title}\n\n${parsed.content}`
+          : parsed.content;
       } catch (error) {
-        console.warn('Failed to parse chunk JSON, using raw chunk:', error);
+        console.warn("Failed to parse chunk JSON, using raw chunk:", error);
         return c.chunk;
       }
     });
 
-    const embeddings = embeddingTexts.length > 0
-      ? await createEmbeddings(embeddingTexts)
-      : [];
+    const embeddings =
+      embeddingTexts.length > 0 ? await createEmbeddings(embeddingTexts) : [];
 
     // Stage 6: Batch Storage for Changed Content
     if (allChunks.length > 0) {
       const chunksWithEmbeddings = allChunks.map((item, index) => ({
         url: item.url,
         content: item.chunk,
-        embedding: embeddings[index] || []
+        embedding: embeddings[index] || [],
       }));
       await this.dbManager.insertChunks(chunksWithEmbeddings);
     }
@@ -125,9 +149,9 @@ class AppleDocCollector {
     // Stage 7: Lightweight Update for Unchanged Content
     if (unchangedResults.length > 0) {
       await this.dbManager.batchUpdateCollectCountOnly(
-        unchangedResults.map(r => ({
+        unchangedResults.map((r) => ({
           id: r.record.id,
-          collect_count: r.record.collect_count + 1
+          collect_count: r.record.collect_count + 1,
         }))
       );
     }
@@ -150,7 +174,7 @@ class AppleDocCollector {
           record,
           collectResult,
           hasChanged: false,
-          error: collectResult.error
+          error: collectResult.error,
         };
       }
 
@@ -164,7 +188,7 @@ class AppleDocCollector {
         record,
         collectResult,
         hasChanged,
-        newRawJson
+        newRawJson,
       };
     });
   }
@@ -172,7 +196,10 @@ class AppleDocCollector {
   /**
    * 判断内容是否真正发生变化
    */
-  private isContentChanged(oldRawJson: string | null, newRawJson: string): boolean {
+  private isContentChanged(
+    oldRawJson: string | null,
+    newRawJson: string
+  ): boolean {
     if (!oldRawJson) return true; // 首次收集，认为有变化
 
     try {
@@ -180,9 +207,14 @@ class AppleDocCollector {
       const newData = JSON.parse(newRawJson);
 
       // 比较关键内容字段，忽略可能的时间戳等元数据变化
-      return !this.deepEqual(oldData.primaryContentSections, newData.primaryContentSections) ||
-             !this.deepEqual(oldData.metadata, newData.metadata) ||
-             !this.deepEqual(oldData.abstract, newData.abstract);
+      return (
+        !this.deepEqual(
+          oldData.primaryContentSections,
+          newData.primaryContentSections
+        ) ||
+        !this.deepEqual(oldData.metadata, newData.metadata) ||
+        !this.deepEqual(oldData.abstract, newData.abstract)
+      );
     } catch {
       return true; // JSON解析失败时认为有变化
     }
@@ -201,11 +233,11 @@ class AppleDocCollector {
       return obj1.every((item, index) => this.deepEqual(item, obj2[index]));
     }
 
-    if (typeof obj1 === 'object') {
+    if (typeof obj1 === "object") {
       const keys1 = Object.keys(obj1);
       const keys2 = Object.keys(obj2);
       if (keys1.length !== keys2.length) return false;
-      return keys1.every(key => this.deepEqual(obj1[key], obj2[key]));
+      return keys1.every((key) => this.deepEqual(obj1[key], obj2[key]));
     }
 
     return false;
@@ -225,7 +257,7 @@ class AppleDocCollector {
     for (const comparison of comparisonResults) {
       const { record, collectResult, hasChanged, error } = comparison;
 
-      if (collectResult?.error?.includes('PERMANENT_ERROR:')) {
+      if (collectResult?.error?.includes("PERMANENT_ERROR:")) {
         deleteIds.push(record.id);
       } else if (hasChanged && collectResult?.data) {
         // 只有内容变化的记录才有对应的 processResult
@@ -244,9 +276,11 @@ class AppleDocCollector {
           };
           successRecords.push(updatedRecord);
 
-          processResult.data.extractedUrls.forEach((url: string) => extractedUrls.add(url));
+          processResult.data.extractedUrls.forEach((url: string) =>
+            extractedUrls.add(url)
+          );
         } else {
-          const errorMessage = processResult?.error || 'Processing failed';
+          const errorMessage = processResult?.error || "Processing failed";
           const failureRecord: DatabaseRecord = {
             id: record.id,
             url: record.url,

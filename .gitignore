@@ -94,5 +94,6 @@ tests/output/
 tests/batch-chunker-comparison-output/
 tests/embedding-test-output/
 tests/complete-pipeline-output/
+tests/embedding-flow-test-output/
 
 api_keys.txt

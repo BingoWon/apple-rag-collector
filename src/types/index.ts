@@ -104,7 +104,10 @@ interface DatabaseStats {
   readonly collectedPercentage: string; // CollectCount > 0 的比例（百分比格式）
   readonly maxCollectCount: number; // collect_count 的最大值
   readonly minCollectCount: number; // collect_count 的最小值
-  readonly collectCountDistribution: Record<string, { count: number; percentage: string }>; // 每个collect_count值的分布
+  readonly collectCountDistribution: Record<
+    string,
+    { count: number; percentage: string }
+  >; // 每个collect_count值的分布
 }
 
 export type {
