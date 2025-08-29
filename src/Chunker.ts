@@ -42,6 +42,7 @@ import { BatchErrorHandler } from "./utils/batch-error-handler.js";
 export class Chunker {
   // Core configuration constants (matching Python implementation)
   private static readonly TARGET_CHUNK_SIZE = 2500;
+  private static readonly MAX_CHUNK_SIZE = 3000;
   private static readonly SEARCH_RANGE = 250;
 
   // Smart split priority patterns (matching Python implementation)
@@ -99,7 +100,7 @@ export class Chunker {
       return [];
     }
 
-    if (text.length <= Chunker.TARGET_CHUNK_SIZE) {
+    if (text.length <= Chunker.MAX_CHUNK_SIZE) {
       return [this._createChunkJson(title, text)];
     }
 
