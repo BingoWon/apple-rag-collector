@@ -108,6 +108,7 @@ interface DatabaseStats {
     string,
     { count: number; percentage: string }
   >; // Distribution of each collect_count value
+  readonly totalChunks: number; // Total number of chunks in chunks table
 }
 
 export type {

@@ -45,20 +45,18 @@ class AppleDocCollector {
   }
 
   async execute(): Promise<{
-    hasData: boolean;
     batchNumber: number;
     totalChunks: number;
   }> {
     const records = await this.dbManager.getBatchRecords(this.config.batchSize);
 
-    if (records.length === 0) {
-      return { hasData: false, batchNumber: this.batchCounter, totalChunks: 0 };
-    }
+    // Note: records.length === 0 never occurs in continuous processing
+    // Database always contains URLs to process with incremented collect_count
 
     this.batchCounter++;
     const startTime = Date.now();
 
-    this.logger.info(`\n${"=".repeat(30)}`);
+    this.logger.info(`\n`);
     this.logger.info(
       `🚀 Batch #${this.batchCounter}: Processing ${records.length} URLs`
     );
@@ -81,7 +79,6 @@ class AppleDocCollector {
     );
 
     return {
-      hasData: true,
       batchNumber: this.batchCounter,
       totalChunks: result.totalChunks,
     };

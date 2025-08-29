@@ -192,6 +192,7 @@ class PostgreSQLManager {
         avgResult,
         minMaxResult,
         distributionResult,
+        chunksResult,
       ] = await Promise.all([
         client.query("SELECT COUNT(*) as count FROM pages"),
         client.query(
@@ -204,6 +205,7 @@ class PostgreSQLManager {
         client.query(
           "SELECT collect_count, COUNT(*) as count FROM pages GROUP BY collect_count ORDER BY collect_count"
         ),
+        client.query("SELECT COUNT(*) as count FROM chunks"),
       ]);
 
       const total = parseInt(totalResult.rows[0]?.count || "0");
@@ -211,6 +213,7 @@ class PostgreSQLManager {
       const avgCollectCount = parseFloat(avgResult.rows[0]?.avg || "0");
       const minCollectCount = parseInt(minMaxResult.rows[0]?.min || "0");
       const maxCollectCount = parseInt(minMaxResult.rows[0]?.max || "0");
+      const totalChunks = parseInt(chunksResult.rows[0]?.count || "0");
 
       const collectCountDistribution: Record<
         string,
@@ -235,6 +238,7 @@ class PostgreSQLManager {
         maxCollectCount,
         minCollectCount,
         collectCountDistribution,
+        totalChunks,
       };
     } finally {
       client.release();
