@@ -1,25 +1,25 @@
 /**
  * API Key管理器 - 最巧妙精简有效的实现
- * 
+ *
  * 一个文本文件，每行一个key，失效就删除。
  * 没有复杂的JSON，没有状态跟踪，没有冗余功能。
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from "fs";
+import path from "path";
 
 export class KeyManager {
   /**
    * API Key管理器 - 优雅现代精简的全局最优解
    */
-  
+
   private keysFile: string;
   private currentIndex: number = 0;
   private readonly lock = new Map<string, boolean>(); // Simple lock mechanism
 
   constructor(keysFile: string = "api_keys.txt") {
     this.keysFile = keysFile;
-    
+
     // 确保文件存在
     if (!fs.existsSync(this.keysFile)) {
       const dir = path.dirname(this.keysFile);
@@ -66,13 +66,14 @@ export class KeyManager {
    */
   private readKeys(): string[] {
     try {
-      const content = fs.readFileSync(this.keysFile, 'utf8').trim();
+      const content = fs.readFileSync(this.keysFile, "utf8").trim();
       if (!content) {
         return [];
       }
-      return content.split('\n')
-        .map(key => key.trim())
-        .filter(key => key.length > 0);
+      return content
+        .split("\n")
+        .map((key) => key.trim())
+        .filter((key) => key.length > 0);
     } catch (error) {
       return [];
     }
@@ -112,7 +113,7 @@ export class KeyManager {
     try {
       const keys = this.readKeys();
       const keyIndex = keys.indexOf(key);
-      
+
       if (keyIndex === -1) {
         return false;
       }
@@ -128,7 +129,7 @@ export class KeyManager {
       }
 
       // 写回文件
-      fs.writeFileSync(this.keysFile, keys.join('\n'));
+      fs.writeFileSync(this.keysFile, keys.join("\n"));
 
       console.log(`🗑️ Removed failed key: ${key.slice(0, 20)}...`);
       return true;
@@ -159,7 +160,7 @@ export class KeyManager {
       const keys = this.readKeys();
       if (!keys.includes(key)) {
         keys.push(key);
-        fs.writeFileSync(this.keysFile, keys.join('\n'));
+        fs.writeFileSync(this.keysFile, keys.join("\n"));
       }
     } finally {
       this.releaseLock();
@@ -170,7 +171,7 @@ export class KeyManager {
    * Simple lock mechanism
    */
   private acquireLock(): void {
-    const lockKey = 'keymanager';
+    const lockKey = "keymanager";
     while (this.lock.get(lockKey)) {
       // Busy wait - in a real implementation, you might want to use a proper mutex
       // For this simple case, the synchronous nature of Node.js makes this sufficient
@@ -179,7 +180,7 @@ export class KeyManager {
   }
 
   private releaseLock(): void {
-    const lockKey = 'keymanager';
+    const lockKey = "keymanager";
     this.lock.delete(lockKey);
   }
 }

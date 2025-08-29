@@ -7,7 +7,7 @@ class TelegramNotifier {
   private readonly enabled: boolean;
 
   constructor() {
-    this.url = process.env['TELEGRAM_BOT_URL'] || '';
+    this.url = process.env["TELEGRAM_BOT_URL"] || "";
     this.enabled = Boolean(this.url);
   }
 
@@ -32,9 +32,9 @@ class TelegramNotifier {
   private async send(text: string): Promise<void> {
     try {
       await fetch(this.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, parse_mode: 'HTML' }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, parse_mode: "HTML" }),
       });
     } catch (error) {
       // 静默处理错误

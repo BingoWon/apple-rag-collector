@@ -36,8 +36,8 @@
  * - Embedding Optimized: Title + content structure ideal for vector embeddings
  */
 
-import { type BatchConfig, type BatchResult } from './types/index.js';
-import { BatchErrorHandler } from './utils/batch-error-handler.js';
+import { type BatchConfig, type BatchResult } from "./types/index.js";
+import { BatchErrorHandler } from "./utils/batch-error-handler.js";
 
 export class Chunker {
   // Core configuration constants (matching Python implementation)
@@ -46,12 +46,12 @@ export class Chunker {
 
   // Smart split priority patterns (matching Python implementation)
   private static readonly SPLIT_PATTERNS: Array<[string, number]> = [
-    ['# ', 2],      // H1 header (highest priority)
-    ['## ', 3],     // H2 header
-    ['### ', 4],    // H3 header
-    ['\n\n', 2],    // Double newline
-    ['\n', 1],      // Single newline
-    ['.', 1],       // Period (lowest priority)
+    ["# ", 2], // H1 header (highest priority)
+    ["## ", 3], // H2 header
+    ["### ", 4], // H3 header
+    ["\n\n", 2], // Double newline
+    ["\n", 1], // Single newline
+    [".", 1], // Period (lowest priority)
   ];
 
   constructor(private readonly config: BatchConfig) {}
@@ -59,22 +59,32 @@ export class Chunker {
   /**
    * Batch chunking framework with title support
    */
-  chunkTexts(contentResults: Array<{ url: string; title: string | null; content: string }>): BatchResult<string[]>[] {
+  chunkTexts(
+    contentResults: Array<{
+      url: string;
+      title: string | null;
+      content: string;
+    }>
+  ): BatchResult<string[]>[] {
     const results: BatchResult<string[]>[] = [];
 
     for (let i = 0; i < contentResults.length; i += this.config.batchSize) {
       const batch = contentResults.slice(i, i + this.config.batchSize);
-      const batchResults = batch.map(item => this.chunkSingleText(item));
+      const batchResults = batch.map((item) => this.chunkSingleText(item));
       results.push(...batchResults);
     }
 
     return results;
   }
 
-  private chunkSingleText(item: { url: string; title: string | null; content: string }): BatchResult<string[]> {
+  private chunkSingleText(item: {
+    url: string;
+    title: string | null;
+    content: string;
+  }): BatchResult<string[]> {
     try {
       // Use title as context for all chunks
-      const chunks = this.chunkText(item.content, item.title || '');
+      const chunks = this.chunkText(item.content, item.title || "");
       return BatchErrorHandler.success(item.url, chunks);
     } catch (error) {
       return BatchErrorHandler.failure(item.url, error);
@@ -84,12 +94,14 @@ export class Chunker {
   /**
    * Smart chunking main entry - Dynamic adaptive strategy
    */
-  chunkText(text: string, title: string = ''): string[] {
+  chunkText(text: string, title: string = ""): string[] {
     if (!text.trim()) {
       return [];
     }
 
-    console.log(`Starting smart chunking, document length: ${text.length} characters`);
+    console.log(
+      `Starting smart chunking, document length: ${text.length} characters`
+    );
 
     if (text.length <= Chunker.TARGET_CHUNK_SIZE) {
       return [this._createChunkJson(title, text)];
@@ -99,19 +111,26 @@ export class Chunker {
     return this._adaptiveSplit(text, title);
   }
 
-
-
   /**
    * Dynamic adaptive splitting strategy - Combine dynamic calculation and smart split points
    */
   private _adaptiveSplit(content: string, title: string): string[] {
-    const targetChunkCount = Math.max(1, Math.floor(content.length / Chunker.TARGET_CHUNK_SIZE));
-    console.log(`Dynamic calculation: ${content.length} characters → ${targetChunkCount} chunks`);
+    const targetChunkCount = Math.max(
+      1,
+      Math.floor(content.length / Chunker.TARGET_CHUNK_SIZE)
+    );
+    console.log(
+      `Dynamic calculation: ${content.length} characters → ${targetChunkCount} chunks`
+    );
 
     const chunks: string[] = [];
     let start = 0;
 
-    for (let currentChunkNum = 1; currentChunkNum <= targetChunkCount; currentChunkNum++) {
+    for (
+      let currentChunkNum = 1;
+      currentChunkNum <= targetChunkCount;
+      currentChunkNum++
+    ) {
       if (currentChunkNum === targetChunkCount) {
         // Last chunk: include all remaining content
         const chunkContent = content.slice(start);
@@ -136,7 +155,9 @@ export class Chunker {
       start = splitPos;
     }
 
-    console.log(`Adaptive splitting completed: generated ${chunks.length} chunks (target: ${targetChunkCount})`);
+    console.log(
+      `Adaptive splitting completed: generated ${chunks.length} chunks (target: ${targetChunkCount})`
+    );
     return chunks;
   }
 
@@ -145,7 +166,10 @@ export class Chunker {
    */
   private _findBestSplit(content: string, targetPos: number): number {
     const searchStart = Math.max(0, targetPos - Chunker.SEARCH_RANGE);
-    const searchEnd = Math.min(content.length, targetPos + Chunker.SEARCH_RANGE);
+    const searchEnd = Math.min(
+      content.length,
+      targetPos + Chunker.SEARCH_RANGE
+    );
     const searchText = content.slice(searchStart, searchEnd);
 
     // Search by priority order, return first match found
@@ -160,15 +184,17 @@ export class Chunker {
     return targetPos;
   }
 
-
-
   /**
    * Create JSON format chunk with title and content
    */
   private _createChunkJson(title: string, content: string): string {
-    return JSON.stringify({
-      "title": title,
-      "content": content.trim()
-    }, null, 2);
+    return JSON.stringify(
+      {
+        title: title,
+        content: content.trim(),
+      },
+      null,
+      2
+    );
   }
 }

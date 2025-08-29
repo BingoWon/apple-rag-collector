@@ -8,12 +8,8 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "fmt": "prettier --write src/**/*.ts",
-
-    "pm2:start": "pm2 start ecosystem.config.cjs",
-    "pm2:stop": "pm2 stop apple-rag-collector",
-    "pm2:restart": "pm2 restart apple-rag-collector",
-    "pm2:logs": "pm2 logs apple-rag-collector"
+    "fmt": "biome format --write .",
+    "pm2:start": "pm2 start ecosystem.config.cjs"
   },
   "keywords": [
     "apple",
@@ -29,6 +25,7 @@
     "node": ">=18.0.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.2.2",
     "@types/node": "^22.9.0",
     "@types/pg": "^8.15.5",
     "prettier": "^3.3.3",

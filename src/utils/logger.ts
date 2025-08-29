@@ -3,9 +3,9 @@
  * Supports structured logging with configurable levels and webhook notifications
  */
 
-import { telegramNotifier } from './telegram-notifier.js';
+import { telegramNotifier } from "./telegram-notifier.js";
 
-type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+type LogLevel = "debug" | "info" | "warn" | "error";
 
 class Logger {
   private level: LogLevel;
@@ -16,7 +16,7 @@ class Logger {
     error: 3,
   };
 
-  constructor(level: LogLevel = 'info') {
+  constructor(level: LogLevel = "info") {
     this.level = level;
   }
 
@@ -24,7 +24,11 @@ class Logger {
     return this.levelPriority[level] >= this.levelPriority[this.level];
   }
 
-  private formatMessage(level: LogLevel, message: string, data?: Record<string, unknown>): string {
+  private formatMessage(
+    level: LogLevel,
+    message: string,
+    data?: Record<string, unknown>
+  ): string {
     const timestamp = new Date().toISOString();
     const logEntry = {
       timestamp,
@@ -36,20 +40,20 @@ class Logger {
   }
 
   debug(message: string, data?: Record<string, unknown>): void {
-    if (this.shouldLog('debug')) {
-      console.log(this.formatMessage('debug', message, data));
+    if (this.shouldLog("debug")) {
+      console.log(this.formatMessage("debug", message, data));
     }
   }
 
   info(message: string, data?: Record<string, unknown>): void {
-    if (this.shouldLog('info')) {
-      console.log(this.formatMessage('info', message, data));
+    if (this.shouldLog("info")) {
+      console.log(this.formatMessage("info", message, data));
     }
   }
 
   warn(message: string, data?: Record<string, unknown>): void {
-    if (this.shouldLog('warn')) {
-      console.warn(this.formatMessage('warn', message, data));
+    if (this.shouldLog("warn")) {
+      console.warn(this.formatMessage("warn", message, data));
       // 发送Telegram警告通知
       telegramNotifier.notifyWarning(message).catch(() => {
         // 静默处理Telegram错误
@@ -58,8 +62,8 @@ class Logger {
   }
 
   error(message: string, data?: Record<string, unknown>): void {
-    if (this.shouldLog('error')) {
-      console.error(this.formatMessage('error', message, data));
+    if (this.shouldLog("error")) {
+      console.error(this.formatMessage("error", message, data));
       // 发送Telegram错误通知
       const error = new Error(message);
       telegramNotifier.notifyError(error).catch(() => {

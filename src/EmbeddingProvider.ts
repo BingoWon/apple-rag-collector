@@ -18,7 +18,7 @@
  * ```
  */
 
-import { KeyManager } from './KeyManager.js';
+import { KeyManager } from "./KeyManager.js";
 
 // ============================================================================
 // Configuration
@@ -33,10 +33,12 @@ export interface EmbeddingConfig {
 
 export function createEmbeddingConfig(): EmbeddingConfig {
   return {
-    model: process.env['EMBEDDING_MODEL'] || 'Qwen/Qwen3-Embedding-4B',
-    dimension: parseInt(process.env['EMBEDDING_DIM'] || '2560'),
-    apiBaseUrl: process.env['EMBEDDING_API_BASE_URL'] || 'https://api.siliconflow.cn/v1/embeddings',
-    timeout: parseInt(process.env['EMBEDDING_API_TIMEOUT'] || '30') * 1000
+    model: process.env["EMBEDDING_MODEL"] || "Qwen/Qwen3-Embedding-4B",
+    dimension: parseInt(process.env["EMBEDDING_DIM"] || "2560"),
+    apiBaseUrl:
+      process.env["EMBEDDING_API_BASE_URL"] ||
+      "https://api.siliconflow.cn/v1/embeddings",
+    timeout: parseInt(process.env["EMBEDDING_API_TIMEOUT"] || "30") * 1000,
   };
 }
 
@@ -74,9 +76,13 @@ export class BatchEmbeddingProvider {
             const response = await this.makeBatchApiRequest(texts, apiKey);
 
             if (response.data && response.data.length === texts.length) {
-              return response.data.map((item: any) => this.l2Normalize(item.embedding));
+              return response.data.map((item: any) =>
+                this.l2Normalize(item.embedding)
+              );
             } else {
-              throw new Error(`Invalid response: expected ${texts.length} embeddings, got ${response.data?.length || 0}`);
+              throw new Error(
+                `Invalid response: expected ${texts.length} embeddings, got ${response.data?.length || 0}`
+              );
             }
           } catch (error) {
             lastError = error as Error;
@@ -101,33 +107,36 @@ export class BatchEmbeddingProvider {
           }
         }
       } catch (error) {
-        if ((error as Error).message.includes('No API keys available')) {
-          throw new Error('All API keys exhausted');
+        if ((error as Error).message.includes("No API keys available")) {
+          throw new Error("All API keys exhausted");
         }
         lastError = error as Error;
       }
     }
 
-    throw lastError || new Error('Batch embedding failed after all attempts');
+    throw lastError || new Error("Batch embedding failed after all attempts");
   }
 
-  private async makeBatchApiRequest(texts: string[], apiKey: string): Promise<any> {
+  private async makeBatchApiRequest(
+    texts: string[],
+    apiKey: string
+  ): Promise<any> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
 
     try {
       const response = await fetch(this.config.apiBaseUrl, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
           model: this.config.model,
           input: texts, // True batch: all texts in single request
-          encoding_format: 'float'
+          encoding_format: "float",
         }),
-        signal: controller.signal
+        signal: controller.signal,
       });
 
       clearTimeout(timeoutId);
@@ -146,25 +155,29 @@ export class BatchEmbeddingProvider {
 
   private l2Normalize(vector: number[]): number[] {
     const norm = Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0));
-    return norm === 0 ? vector : vector.map(val => val / norm);
+    return norm === 0 ? vector : vector.map((val) => val / norm);
   }
 
   private isApiKeyError(error: Error): boolean {
     const msg = error.message.toLowerCase();
-    return msg.includes('401') || msg.includes('403') || msg.includes('unauthorized');
+    return (
+      msg.includes("401") || msg.includes("403") || msg.includes("unauthorized")
+    );
   }
 
   private isRateLimitError(error: Error): boolean {
-    return error.message.toLowerCase().includes('429');
+    return error.message.toLowerCase().includes("429");
   }
 
   private isRetryableError(error: Error): boolean {
     const msg = error.message.toLowerCase();
-    return msg.includes('503') || msg.includes('504') || msg.includes('timeout');
+    return (
+      msg.includes("503") || msg.includes("504") || msg.includes("timeout")
+    );
   }
 
   private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   get embeddingDim(): number {
@@ -175,8 +188,6 @@ export class BatchEmbeddingProvider {
     return this.config.model;
   }
 }
-
-
 
 // ============================================================================
 // Global Provider Management
