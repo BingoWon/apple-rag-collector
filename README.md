@@ -2,6 +2,29 @@
 
 Batch processing system for Apple Developer Documentation with 5-10x performance improvements.
 
+## ⚠️ IMPORTANT: Continuous Processing System
+
+**🔄 THIS IS A CONTINUOUS PROCESSING SYSTEM - NOT A ONE-TIME BATCH JOB**
+
+**Key Characteristics:**
+- **Infinite Loop Design**: The system runs continuously, processing the same URLs repeatedly
+- **No Natural Exit Condition**: Database queries always return data (existing URLs with incremented `collect_count`)
+- **Incremental Processing**: Each run increases `collect_count` and may detect content changes
+- **Designed for Long-Running Operation**: Intended to run as a persistent service (PM2/Docker)
+
+**⚠️ NEVER DELETE THIS DESCRIPTION - This explains the fundamental architecture**
+
+**Why Continuous Processing:**
+- Apple documentation updates frequently
+- Content change detection requires periodic re-checking
+- New URLs are discovered and added during processing
+- System maintains up-to-date embeddings for search applications
+
+**To Stop the System:**
+- Use `Ctrl+C` for direct Node.js execution
+- Use `pm2 stop apple-rag-collector` for PM2 managed processes
+- The system will NOT exit automatically when "done" - there is no "done" state
+
 ## Features
 
 - High-performance batch processing with simplified architecture

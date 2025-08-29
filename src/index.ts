@@ -90,32 +90,14 @@ async function main(): Promise<void> {
   }
 
   // Main processing loop - continuous processing while data exists
-  const PROGRESS_REPORT_INTERVAL = 200; // Send progress report every 200 batches
+  const PROGRESS_REPORT_INTERVAL = 500; // Send progress report every 500 batches
 
   while (true) {
     try {
       const result = await collector.execute();
 
-      // No data found - exit immediately
-      if (!result.hasData) {
-        logger.info("No more data to process, exiting...");
-
-        // Send final statistics
-        if (telegramNotifier.isEnabled()) {
-          const finalStats = await dbManager.getStats();
-          await telegramNotifier.notifyInfo(
-            `🏁 Processing completed after ${result.batchNumber} batches\n\n` +
-              `📊 Final Statistics:\n` +
-              `• Total records: ${finalStats.total}\n` +
-              `• Collected: ${finalStats.collectedCount} (${finalStats.collectedPercentage})\n` +
-              `• Avg collect count: ${finalStats.avgCollectCount}\n` +
-              `• Range: ${finalStats.minCollectCount} - ${finalStats.maxCollectCount}`
-          );
-        }
-
-        await dbManager.close();
-        process.exit(0);
-      }
+      // Note: hasData is always true in continuous processing system
+      // Database queries always return existing URLs with incremented collect_count
 
       // Send progress report every 1000 batches
       if (result.batchNumber % PROGRESS_REPORT_INTERVAL === 0) {
@@ -128,7 +110,8 @@ async function main(): Promise<void> {
                 `• Total records: ${stats.total}\n` +
                 `• Collected: ${stats.collectedCount} (${stats.collectedPercentage})\n` +
                 `• Avg collect count: ${stats.avgCollectCount}\n` +
-                `• Range: ${stats.minCollectCount} - ${stats.maxCollectCount}\n\n` +
+                `• Range: ${stats.minCollectCount} - ${stats.maxCollectCount}\n` +
+                `• Total chunks: ${stats.totalChunks}\n\n` +
                 `⚡ Batches processed: ${result.batchNumber}\n` +
                 `🔧 Session chunks generated: ${result.totalChunks}`
             );
@@ -144,7 +127,7 @@ async function main(): Promise<void> {
         }
       }
 
-      // If data was processed, immediately continue to next batch
+      // Continue to next batch immediately
     } catch (error) {
       await logger.error("Batch processing failed", {
         error: error instanceof Error ? error.message : "Unknown error",
