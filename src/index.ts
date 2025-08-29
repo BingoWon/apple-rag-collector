@@ -4,6 +4,7 @@ import { AppleDocCollector } from './AppleDocCollector.js';
 import { PostgreSQLManager } from './PostgreSQLManager.js';
 import { type AppConfig } from './types/index.js';
 import { Logger, type LogLevel } from './utils/logger.js';
+import { telegramNotifier } from './utils/telegram-notifier.js';
 
 // Load configuration from environment variables
 const appConfig: AppConfig = {
@@ -50,7 +51,13 @@ async function main(): Promise<void> {
     mode: 'optimized-batch-processing',
     batchSize: appConfig.batchProcessing.batchSize,
     database: `${appConfig.database.host}:${appConfig.database.port}/${appConfig.database.database}`,
+    telegram: telegramNotifier.getConfig(),
   });
+
+  // 发送启动通知
+  if (telegramNotifier.isEnabled()) {
+    await telegramNotifier.notifyInfo('Apple RAG Collector started successfully');
+  }
 
   // Graceful shutdown handling
   process.on('SIGINT', async () => {
@@ -101,7 +108,13 @@ async function main(): Promise<void> {
 }
 
 // Start the application
-main().catch((error) => {
+main().catch(async (error) => {
   console.error('Failed to start Apple RAG Collector:', error);
+
+  // 发送启动失败通知
+  if (telegramNotifier.isEnabled()) {
+    await telegramNotifier.notifyError(error instanceof Error ? error : new Error(String(error)));
+  }
+
   process.exit(1);
 });

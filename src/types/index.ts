@@ -29,7 +29,7 @@ interface AppConfig {
 // Database record interface
 interface DatabaseRecord {
   readonly id: string;
-  readonly source_url: string;
+  readonly url: string;
   readonly raw_json: string | null;
   readonly title: string | null;
   readonly content: string;

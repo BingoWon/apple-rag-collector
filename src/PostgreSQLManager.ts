@@ -14,11 +14,11 @@ class PostgreSQLManager {
       // Enable required extensions
       await client.query('CREATE EXTENSION IF NOT EXISTS "vector"');
 
-      // Create apple_docs table if it doesn't exist
+      // Create pages table if it doesn't exist
       await client.query(`
-        CREATE TABLE IF NOT EXISTS apple_docs (
+        CREATE TABLE IF NOT EXISTS pages (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          source_url TEXT NOT NULL UNIQUE,
+          url TEXT NOT NULL UNIQUE,
           raw_json JSONB,
           title TEXT,
           content TEXT,
@@ -34,18 +34,18 @@ class PostgreSQLManager {
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           url TEXT NOT NULL,
           content TEXT NOT NULL,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
           embedding HALFVEC(2560)
         )
       `);
 
-      // Create indexes for apple_docs table
-      await client.query('CREATE INDEX IF NOT EXISTS idx_apple_docs_collect_count_url ON apple_docs(collect_count, source_url)');
-      await client.query('CREATE INDEX IF NOT EXISTS idx_apple_docs_created_at ON apple_docs(created_at)');
-      await client.query('CREATE INDEX IF NOT EXISTS idx_apple_docs_updated_at ON apple_docs(updated_at)');
-      await client.query('CREATE INDEX IF NOT EXISTS idx_apple_docs_title ON apple_docs(title)');
-      await client.query('CREATE INDEX IF NOT EXISTS idx_apple_docs_source_url ON apple_docs(source_url)');
-      await client.query('CREATE INDEX IF NOT EXISTS idx_apple_docs_raw_json ON apple_docs USING GIN (raw_json)');
+      // Create indexes for pages table
+      await client.query('CREATE INDEX IF NOT EXISTS idx_pages_collect_count_url ON pages(collect_count, url)');
+      await client.query('CREATE INDEX IF NOT EXISTS idx_pages_created_at ON pages(created_at)');
+      await client.query('CREATE INDEX IF NOT EXISTS idx_pages_updated_at ON pages(updated_at)');
+      await client.query('CREATE INDEX IF NOT EXISTS idx_pages_title ON pages(title)');
+      await client.query('CREATE INDEX IF NOT EXISTS idx_pages_url ON pages(url)');
+      await client.query('CREATE INDEX IF NOT EXISTS idx_pages_raw_json ON pages USING GIN (raw_json)');
 
       // Create indexes for chunks table
       await client.query('CREATE INDEX IF NOT EXISTS idx_chunks_url ON chunks(url)');
@@ -53,7 +53,7 @@ class PostgreSQLManager {
 
       // Create stats view if it doesn't exist
       await client.query(`
-        CREATE OR REPLACE VIEW apple_docs_stats AS
+        CREATE OR REPLACE VIEW pages_stats AS
         SELECT
           COUNT(*) as total_records,
           COUNT(*) FILTER (WHERE collect_count > 0) as collected_records,
@@ -63,7 +63,7 @@ class PostgreSQLManager {
           COUNT(*) FILTER (WHERE title IS NOT NULL) as records_with_title,
           COUNT(*) FILTER (WHERE content IS NOT NULL AND content != '') as records_with_content,
           COUNT(*) FILTER (WHERE raw_json IS NOT NULL) as records_with_raw_json
-        FROM apple_docs
+        FROM pages
       `);
 
     } finally {
@@ -71,51 +71,7 @@ class PostgreSQLManager {
     }
   }
 
-  async batchInsertRecords(records: DatabaseRecord[]): Promise<void> {
-    if (records.length === 0) return;
 
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      // 真正的批量插入 - 一次SQL操作
-      const values = records.map((_, index) => {
-        const offset = index * 8;
-        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8})`;
-      }).join(', ');
-
-      const params = records.flatMap(record => [
-        record.id,
-        record.source_url,
-        record.raw_json,
-        record.title,
-        record.content,
-        record.collect_count,
-        record.created_at,
-        record.updated_at
-      ]);
-
-      await client.query(`
-        INSERT INTO apple_docs
-        (id, source_url, raw_json, title, content, collect_count, created_at, updated_at)
-        VALUES ${values}
-        ON CONFLICT (source_url)
-        DO UPDATE SET
-          raw_json = EXCLUDED.raw_json,
-          title = EXCLUDED.title,
-          content = EXCLUDED.content,
-          collect_count = EXCLUDED.collect_count,
-          updated_at = EXCLUDED.updated_at
-      `, params);
-
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
 
   async batchInsertUrls(urls: string[]): Promise<number> {
     if (urls.length === 0) return 0;
@@ -134,10 +90,10 @@ class PostgreSQLManager {
       ]);
 
       const result = await client.query(`
-        INSERT INTO apple_docs (source_url, collect_count)
+        INSERT INTO pages (url, collect_count)
         VALUES ${values}
-        ON CONFLICT (source_url) DO NOTHING
-        RETURNING source_url
+        ON CONFLICT (url) DO NOTHING
+        RETURNING url
       `, params);
 
       return result.rowCount || 0;
@@ -152,11 +108,11 @@ class PostgreSQLManager {
     const client = await this.pool.connect();
     try {
       const [totalResult, collectedResult, avgResult, minMaxResult, distributionResult] = await Promise.all([
-        client.query('SELECT COUNT(*) as count FROM apple_docs'),
-        client.query('SELECT COUNT(*) as count FROM apple_docs WHERE collect_count > 0'),
-        client.query('SELECT AVG(collect_count) as avg FROM apple_docs'),
-        client.query('SELECT MIN(collect_count) as min, MAX(collect_count) as max FROM apple_docs'),
-        client.query('SELECT collect_count, COUNT(*) as count FROM apple_docs GROUP BY collect_count ORDER BY collect_count')
+        client.query('SELECT COUNT(*) as count FROM pages'),
+        client.query('SELECT COUNT(*) as count FROM pages WHERE collect_count > 0'),
+        client.query('SELECT AVG(collect_count) as avg FROM pages'),
+        client.query('SELECT MIN(collect_count) as min, MAX(collect_count) as max FROM pages'),
+        client.query('SELECT collect_count, COUNT(*) as count FROM pages GROUP BY collect_count ORDER BY collect_count')
       ]);
 
       const total = parseInt(totalResult.rows[0]?.count || '0');
@@ -191,8 +147,9 @@ class PostgreSQLManager {
     const client = await this.pool.connect();
     try {
       const result = await client.query(`
-        SELECT * FROM apple_docs
-        ORDER BY collect_count ASC, source_url ASC
+        SELECT * FROM pages
+        WHERE url LIKE 'https://developer.apple.com/%'
+        ORDER BY collect_count ASC, url ASC
         LIMIT $1
       `, [batchSize]);
 
@@ -228,7 +185,7 @@ class PostgreSQLManager {
       // 1. 先删除需要删除的记录
       if (deleteIds.length > 0) {
         const deleteParams = deleteIds.map((_, index) => `$${index + 1}`).join(', ');
-        await client.query(`DELETE FROM apple_docs WHERE id IN (${deleteParams})`, deleteIds);
+        await client.query(`DELETE FROM pages WHERE id IN (${deleteParams})`, deleteIds);
       }
 
       // 2. 批量插入成功和失败记录
@@ -265,7 +222,7 @@ class PostgreSQLManager {
       const params = updates.flatMap(u => [u.id, u.collect_count]);
 
       await client.query(`
-        UPDATE apple_docs
+        UPDATE pages
         SET collect_count = CASE ${caseStatements} END
         WHERE id = ANY($${params.length + 1})
       `, [...params, ids]);
@@ -282,37 +239,38 @@ class PostgreSQLManager {
   }
 
   /**
-   * 在事务内批量插入记录
+   * 在已有事务内批量插入记录
+   *
+   * 此方法专门用于复杂事务场景，如 batchProcessRecords 中的删除+插入操作。
+   * 不管理数据库连接和事务，由调用者负责事务的开始、提交和回滚。
+   *
+   * @param client - 已连接的数据库客户端（必须已在事务中）
+   * @param records - 要插入的数据库记录数组
    */
   private async batchInsertRecordsInTransaction(client: any, records: DatabaseRecord[]): Promise<void> {
-    const values = records.map((_, index) => {
-      const offset = index * 8;
-      return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8})`;
-    }).join(', ');
-
-    const params = records.flatMap(record => [
-      record.id,
-      record.source_url,
-      record.raw_json,
-      record.title,
-      record.content,
-      record.collect_count,
-      record.created_at,
-      record.updated_at
-    ]);
-
-    await client.query(`
-      INSERT INTO apple_docs
-      (id, source_url, raw_json, title, content, collect_count, created_at, updated_at)
-      VALUES ${values}
-      ON CONFLICT (source_url)
-      DO UPDATE SET
-        raw_json = EXCLUDED.raw_json,
-        title = EXCLUDED.title,
-        content = EXCLUDED.content,
-        collect_count = EXCLUDED.collect_count,
-        updated_at = EXCLUDED.updated_at
-    `, params);
+    for (const record of records) {
+      await client.query(`
+        INSERT INTO pages
+        (id, url, raw_json, title, content, collect_count, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (url)
+        DO UPDATE SET
+          raw_json = EXCLUDED.raw_json,
+          title = EXCLUDED.title,
+          content = EXCLUDED.content,
+          collect_count = EXCLUDED.collect_count,
+          updated_at = EXCLUDED.updated_at
+      `, [
+        record.id,
+        record.url,
+        record.raw_json,
+        record.title,
+        record.content,
+        record.collect_count,
+        record.created_at,
+        record.updated_at
+      ]);
+    }
   }
 
   /**

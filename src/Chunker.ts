@@ -1,73 +1,65 @@
 /**
- * Apple Documentation Intelligent Chunking Implementation - Unified JSON Output
+ * Apple Documentation Smart Chunker - Title + Content Architecture (TypeScript Implementation)
  *
- * === CHUNKING STRATEGY OVERVIEW ===
+ * === TITLE + CONTENT CHUNKING STRATEGY ===
  *
- * This module implements a five-tier priority intelligent chunking strategy specifically designed
- * for Apple Developer Documentation structure characteristics. All strategies output unified JSON
- * format to ensure system consistency and processing simplification.
+ * This module implements an optimized chunking strategy specifically designed for Apple Developer
+ * Documentation, featuring title-aware semantic chunking for superior embedding quality.
  *
- * 【Unified Header-Based Splitting Framework】
- * - Core method: `_chunkByHeader(text, level)` handles all header levels
- * - Hardcoded design: No configuration, all parameters directly hardcoded
- * - Complete unification: H1/H2/H3 use identical processing logic
- * - Unified algorithm: All levels use TARGET_CHUNK_SIZE target greedy merging
- * - Unified format: All outputs use the same JSON structure
+ * 【Core Features】
+ * - Title Integration: Each chunk includes document title for complete semantic context
+ * - Dynamic Chunk Size: Recalculate chunk size before each split, adaptive to remaining content
+ * - Smart Split Points: Find best semantic boundaries near target position by priority
+ * - Quality Assurance: Auto-filter invalid chunks, ensure output quality
+ * - Unified JSON Output: All chunks use consistent {"title", "content"} structure
  *
- * 【Completely Unified Processing Logic】
- * - Trigger condition: ≥2 headers of corresponding level
- * - Section splitting: Each header as independent section, excluding preceding content
- * - Context extraction: Content before first header as context
- * - Clear separation: Context and content completely separated, no overlap
- * - Output format: {"context": "content before first header", "content": "merged header sections"}
+ * 【Algorithm Flow】
+ * 1. Accept title parameter from ContentProcessor (document metadata)
+ * 2. Dynamic calculation: target_chunk_count = total_length ÷ 2500
+ * 3. Before each split: chunk_size = remaining_length ÷ remaining_chunks
+ * 4. Find best split point near target position by priority
+ * 5. Last chunk contains all remaining content with auto quality assurance
+ * 6. Generate JSON chunks with title + content structure
  *
- * 【Three Priority Levels Completely Unified】
- * - First priority: H1 splitting (≥2 H1 headers)
- * - Second priority: H2 splitting (≥2 H2 headers)
- * - Third priority: H3 splitting (≥2 H3 headers)
+ * 【JSON Output Format】
+ * ```json
+ * {
+ *   "title": "Article: Xcode 26 Beta 7 Release Notes\nUpdate your apps...",
+ *   "content": "## Overview\nXcode 26 beta 7 includes SDKs..."
+ * }
+ * ```
  *
- * 【Fourth Priority: Smart Newline Splitting】
- * - Trigger condition: Long documents when first three priorities don't qualify
- * - Processing logic: Dynamic chunk size calculation, split by newline boundaries
- * - Algorithm steps:
- *   1. Calculate chunk count: total length ÷ TARGET_CHUNK_SIZE, floor
- *   2. Calculate adjusted chunk size: total length ÷ chunk count
- *   3. Find nearest newline around adjusted size as split point
- * - Output format: {"context": "content before first H header", "content": "split content"}
- *
- * 【Short Document Special Handling】
- * - Trigger condition: Document length ≤ TARGET_CHUNK_SIZE
- * - Processing logic: Return complete content directly, no splitting
- * - Output format: {"context": "content before first H header", "content": "complete content"}
+ * 【Design Principles】
+ * - Semantic Completeness: Title provides document context for every chunk
+ * - Dynamic Adaptive: Combine mathematical precision with semantic reasonableness
+ * - Smart Optimization: Priority-based split point selection for better chunk quality
+ * - Embedding Optimized: Title + content structure ideal for vector embeddings
  */
 
 import { type BatchConfig, type BatchResult } from './types/index.js';
 import { BatchErrorHandler } from './utils/batch-error-handler.js';
 
-interface ChunkData {
-  context: string;
-  content: string;
-}
-
 export class Chunker {
-  /**
-   * Apple Documentation Specialized Chunker - Header-based splitting
-   *
-   * Hyperparameter configuration:
-   * - TARGET_CHUNK_SIZE: Target chunk size (character count)
-   * - MAX_CHUNK_SIZE: Maximum chunk size (character count)
-   */
-
-  // Hyperparameter definitions
+  // Core configuration constants (matching Python implementation)
   private static readonly TARGET_CHUNK_SIZE = 2500;
-  private static readonly MAX_CHUNK_SIZE = 3000;
+  private static readonly SEARCH_RANGE = 250;
+
+  // Smart split priority patterns (matching Python implementation)
+  private static readonly SPLIT_PATTERNS: Array<[string, number]> = [
+    ['# ', 2],      // H1 header (highest priority)
+    ['## ', 3],     // H2 header
+    ['### ', 4],    // H3 header
+    ['\n\n', 2],    // Double newline
+    ['\n', 1],      // Single newline
+    ['.', 1],       // Period (lowest priority)
+  ];
 
   constructor(private readonly config: BatchConfig) {}
 
   /**
-   * Unified header splitting framework: H1 → H2 → H3 → Complete content
+   * Batch chunking framework with title support
    */
-  chunkTexts(contentResults: Array<{ url: string; content: string }>): BatchResult<string[]>[] {
+  chunkTexts(contentResults: Array<{ url: string; title: string | null; content: string }>): BatchResult<string[]>[] {
     const results: BatchResult<string[]>[] = [];
 
     for (let i = 0; i < contentResults.length; i += this.config.batchSize) {
@@ -79,295 +71,104 @@ export class Chunker {
     return results;
   }
 
-  private chunkSingleText(item: { url: string; content: string }): BatchResult<string[]> {
+  private chunkSingleText(item: { url: string; title: string | null; content: string }): BatchResult<string[]> {
     try {
-      const chunks = this.performChunking(item.content);
+      // Use title as context for all chunks
+      const chunks = this.chunkText(item.content, item.title || '');
       return BatchErrorHandler.success(item.url, chunks);
     } catch (error) {
       return BatchErrorHandler.failure(item.url, error);
     }
   }
 
-  private performChunking(text: string): string[] {
+  /**
+   * Smart chunking main entry - Dynamic adaptive strategy
+   */
+  chunkText(text: string, title: string = ''): string[] {
     if (!text.trim()) {
       return [];
     }
 
+    console.log(`Starting smart chunking, document length: ${text.length} characters`);
+
     if (text.length <= Chunker.TARGET_CHUNK_SIZE) {
-      return this._chunkComplete(text);
+      return [this._createChunkJson(title, text)];
     }
 
-    // Unified header splitting: H1 → H2 → H3
-    for (const level of [1, 2, 3]) {
-      const chunks = this._chunkByHeader(text, level);
-      if (chunks.length > 0) {
-        return chunks;
-      }
-    }
-
-    // Fourth priority: Smart newline splitting
-    return this._chunkByNewlines(text);
+    // Execute dynamic adaptive splitting with title
+    return this._adaptiveSplit(text, title);
   }
 
-  /**
-   * Optimized single-pass framework
-   */
-  private _chunkByHeader(text: string, level: number): string[] {
-    const prefixMap: Record<number, string> = { 1: '# ', 2: '## ', 3: '### ' };
-    const prefix = prefixMap[level];
 
-    if (!prefix) {
-      return [];
-    }
-
-    // Single pass to get both context and remaining text
-    const [context, remainingText] = this._splitContextAndRemaining(text, prefix);
-    if (!remainingText) {
-      return [];
-    }
-
-    // Simple split of remaining sections
-    const sections = this._simpleSplitSections(remainingText, prefix);
-    if (sections.length < 2) {
-      return [];
-    }
-
-    console.log(`Detected ${sections.length} H${level} headers, starting H${level} splitting`);
-    const chunks = this._greedyMergeWithJsonSize(sections, context);
-    console.log(`H${level} chunking completed: ${chunks.length} chunks`);
-    return chunks;
-  }
 
   /**
-   * Single pass to get both context and remaining text
+   * Dynamic adaptive splitting strategy - Combine dynamic calculation and smart split points
    */
-  private _splitContextAndRemaining(text: string, prefix: string): [string, string] {
-    const lines = text.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (line && line.startsWith(prefix) && !line.startsWith(prefix + '#')) {
-        const context = lines.slice(0, i).join('\n').trim();
-        const remaining = lines.slice(i).join('\n');
-        return [context, remaining];
-      }
-    }
-    return ["", ""];
-  }
-
-  /**
-   * Minimal splitting logic - no filtering needed
-   */
-  private _simpleSplitSections(text: string, prefix: string): string[] {
-    const lines = text.split('\n');
-    const sections: string[] = [];
-    let currentSection: string[] = [];
-
-    for (const line of lines) {
-      if (line.startsWith(prefix) && !line.startsWith(prefix + '#')) {
-        if (currentSection.length > 0) {
-          sections.push(currentSection.join('\n'));
-        }
-        currentSection = [line];
-      } else {
-        currentSection.push(line);
-      }
-    }
-
-    if (currentSection.length > 0) {
-      sections.push(currentSection.join('\n'));
-    }
-
-    return sections;
-  }
-
-  /**
-   * Greedy merging algorithm based on complete JSON size - using hyperparameter configuration
-   */
-  private _greedyMergeWithJsonSize(sections: string[], context: string): string[] {
-    if (sections.length === 0) {
-      return [];
-    }
-
-    const jsonChunks: string[] = [];
-    let currentSections = [sections[0]];
-
-    for (let i = 1; i < sections.length; i++) {
-      const section = sections[i];
-      
-      // 构建测试JSON
-      const testContent = currentSections.concat([section]).join('\n\n');
-      const testChunk: ChunkData = {
-        context: context,
-        content: testContent
-      };
-      const testJson = JSON.stringify(testChunk, null, 2);
-
-      // 构建当前JSON用于大小比较
-      const currentContent = currentSections.join('\n\n');
-      const currentChunk: ChunkData = {
-        context: context,
-        content: currentContent
-      };
-      const currentJson = JSON.stringify(currentChunk, null, 2);
-
-      // Judge whether to merge based on complete JSON size
-      if (testJson.length <= Chunker.MAX_CHUNK_SIZE && currentJson.length < Chunker.TARGET_CHUNK_SIZE) {
-        currentSections.push(section);
-      } else {
-        // Complete current chunk, start new chunk
-        jsonChunks.push(currentJson);
-        currentSections = [section];
-      }
-    }
-
-    // Add the last chunk
-    const finalContent = currentSections.join('\n\n');
-    const finalChunk: ChunkData = {
-      context: context,
-      content: finalContent
-    };
-    const finalJson = JSON.stringify(finalChunk, null, 2);
-    jsonChunks.push(finalJson);
-
-    return jsonChunks;
-  }
-
-  /**
-   * Complete content JSON formatting
-   */
-  private _chunkComplete(text: string): string[] {
-    const [context, content] = this._splitByFirstHeader(text);
-    const chunk: ChunkData = {
-      context: context,
-      content: content
-    };
-    return [JSON.stringify(chunk, null, 2)];
-  }
-
-  /**
-   * Fourth priority: Smart newline splitting - inspired by YouTube chunker algorithm
-   */
-  private _chunkByNewlines(text: string): string[] {
-    // First separate context and content
-    const [context, content] = this._splitByFirstHeader(text);
-
-    if (!content.trim()) {
-      // If no content, return complete content
-      const chunk: ChunkData = {
-        context: context,
-        content: content
-      };
-      return [JSON.stringify(chunk, null, 2)];
-    }
-
-    // Dynamic chunk size calculation (inspired by YouTube chunker algorithm)
-    const totalLength = content.length;
-    const chunkCount = Math.max(1, Math.floor(totalLength / Chunker.TARGET_CHUNK_SIZE)); // At least 1 chunk
-    const adjustedChunkSize = Math.floor(totalLength / chunkCount);
-
-    console.log(`Smart newline splitting: total length=${totalLength}, chunk count=${chunkCount}, adjusted chunk size=${adjustedChunkSize}`);
+  private _adaptiveSplit(content: string, title: string): string[] {
+    const targetChunkCount = Math.max(1, Math.floor(content.length / Chunker.TARGET_CHUNK_SIZE));
+    console.log(`Dynamic calculation: ${content.length} characters → ${targetChunkCount} chunks`);
 
     const chunks: string[] = [];
-    let position = 0;
-    let currentChunkIndex = 0;
+    let start = 0;
 
-    while (position < content.length && currentChunkIndex < chunkCount) {
-      // Calculate end position for this chunk
-      const chunkEnd = this._findNewlineChunkEnd(content, position, adjustedChunkSize, currentChunkIndex, chunkCount);
-
-      // Extract chunk content
-      const chunkContent = content.slice(position, chunkEnd).trim();
-
-      if (chunkContent) { // Only add non-empty content
-        const chunk: ChunkData = {
-          context: context,
-          content: chunkContent
-        };
-        const chunkJson = JSON.stringify(chunk, null, 2);
-        chunks.push(chunkJson);
+    for (let currentChunkNum = 1; currentChunkNum <= targetChunkCount; currentChunkNum++) {
+      if (currentChunkNum === targetChunkCount) {
+        // Last chunk: include all remaining content
+        const chunkContent = content.slice(start);
+        if (chunkContent.trim()) {
+          chunks.push(this._createChunkJson(title, chunkContent));
+        }
+        break;
       }
 
-      // Move to next position
-      position = chunkEnd;
-      currentChunkIndex++;
+      // Dynamic calculation of target split position
+      const remainingLength = content.length - start;
+      const remainingChunks = targetChunkCount - currentChunkNum + 1;
+      const dynamicSize = Math.floor(remainingLength / remainingChunks);
+      const targetPos = start + dynamicSize;
+
+      // Find best split point
+      const splitPos = this._findBestSplit(content, targetPos);
+
+      // Create chunk
+      const chunkContent = content.slice(start, splitPos);
+      chunks.push(this._createChunkJson(title, chunkContent));
+      start = splitPos;
     }
 
+    console.log(`Adaptive splitting completed: generated ${chunks.length} chunks (target: ${targetChunkCount})`);
     return chunks;
   }
 
   /**
-   * Find newline-based chunk end position
+   * Find best split point near target position by priority (matching Python implementation)
    */
-  private _findNewlineChunkEnd(content: string, startPos: number, chunkSize: number, currentChunkIndex: number, totalChunkCount: number): number {
-    // If last chunk, return content end directly
-    if (currentChunkIndex === totalChunkCount - 1) {
-      return content.length;
-    }
+  private _findBestSplit(content: string, targetPos: number): number {
+    const searchStart = Math.max(0, targetPos - Chunker.SEARCH_RANGE);
+    const searchEnd = Math.min(content.length, targetPos + Chunker.SEARCH_RANGE);
+    const searchText = content.slice(searchStart, searchEnd);
 
-    // If remaining content less than chunkSize characters, return end directly
-    if (startPos + chunkSize >= content.length) {
-      return content.length;
-    }
-
-    const targetPos = startPos + chunkSize;
-
-    // Search backward for nearest newline
-    let backwardPos: number | null = null;
-    for (let i = targetPos; i > startPos; i--) { // Cannot exceed startPos
-      if (content[i] === '\n') {
-        backwardPos = i + 1; // Position after newline
-        break;
+    // Search by priority order, return first match found
+    for (const [pattern, offset] of Chunker.SPLIT_PATTERNS) {
+      const pos = searchText.lastIndexOf(pattern);
+      if (pos !== -1) {
+        return searchStart + pos + offset;
       }
     }
 
-    // Search forward for nearest newline
-    let forwardPos: number | null = null;
-    for (let i = targetPos; i < content.length; i++) {
-      if (content[i] === '\n') {
-        forwardPos = i + 1; // Position after newline
-        break;
-      }
-    }
-
-    // Choose nearest newline
-    if (backwardPos === null && forwardPos === null) {
-      // No newline found, return content end
-      return content.length;
-    } else if (backwardPos === null) {
-      // Only forward newline
-      return forwardPos!;
-    } else if (forwardPos === null) {
-      // Only backward newline
-      return backwardPos;
-    } else {
-      // Both exist, choose nearest
-      const backwardDistance = targetPos - (backwardPos - 1); // backwardPos already +1
-      const forwardDistance = (forwardPos - 1) - targetPos;    // forwardPos already +1
-
-      if (backwardDistance <= forwardDistance) {
-        return backwardPos;
-      } else {
-        return forwardPos;
-      }
-    }
+    // If no pattern found, return target position
+    return targetPos;
   }
 
+
+
   /**
-   * Split context and content by first H header
+   * Create JSON format chunk with title and content
    */
-  private _splitByFirstHeader(text: string): [string, string] {
-    const lines = text.split('\n');
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (line && line.trim().startsWith('#')) {
-        const context = lines.slice(0, i).join('\n').trim();
-        const content = lines.slice(i).join('\n').trim();
-        return [context, content];
-      }
-    }
-
-    // No H header found
-    return ["", text.trim()];
+  private _createChunkJson(title: string, content: string): string {
+    return JSON.stringify({
+      "title": title,
+      "content": content.trim()
+    }, null, 2);
   }
 }

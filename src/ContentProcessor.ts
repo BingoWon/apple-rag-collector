@@ -1,21 +1,14 @@
-import { type AppleAPIResponse, type DocumentContent, type BatchConfig, type BatchResult } from './types/index.js';
+import { type AppleAPIResponse, type DocumentContent, type BatchResult } from './types/index.js';
 import { BatchErrorHandler } from './utils/batch-error-handler.js';
 
 class ContentProcessor {
   private static readonly BASE_URL = 'https://developer.apple.com' as const;
 
-  constructor(private readonly config: BatchConfig) {}
-
   async processDocuments(apiResults: BatchResult<AppleAPIResponse>[]): Promise<BatchResult<DocumentContent>[]> {
-    const results: BatchResult<DocumentContent>[] = [];
-
-    for (let i = 0; i < apiResults.length; i += this.config.batchSize) {
-      const batch = apiResults.slice(i, i + this.config.batchSize);
-      const batchResults = await Promise.all(batch.map(item => this.processSingleDocument(item)));
-      results.push(...batchResults);
-    }
-
-    return results;
+    // Direct concurrent processing - no sub-batching needed
+    return await Promise.all(
+      apiResults.map(item => this.processSingleDocument(item))
+    );
   }
 
   private async processSingleDocument(item: BatchResult<AppleAPIResponse>): Promise<BatchResult<DocumentContent>> {
