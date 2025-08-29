@@ -623,19 +623,23 @@ REPEAT until no more data, then exit
 - **Quality Assurance**: Multiple collections improve data quality
 - **Efficient Resource Usage**: Exits when no data to process
 ### Execution Logging
-Structured logging provides detailed progress information:
-```json
-{
-  "level": "INFO",
-  "message": "Batch completed",
-  "data": {
-    "batchSize": 25,
-    "successCount": 23,
-    "errorCount": 2,
-    "extractedUrls": 47,
-    "durationMs": 12500
-  }
-}
+Unified text-based logging provides clear progress information:
+
+**Production Environment (PM2):**
+```
+1|apple-rag-collector | 2025-08-29 15:40:28: 🚀 Batch #1: Processing 20 URLs
+1|apple-rag-collector | 2025-08-29 15:40:29: 📝 Content changed: 20 URLs (full processing)
+1|apple-rag-collector | 2025-08-29 15:40:35: ✅ Batch #1 completed in 6891ms: 127 chunks generated
+```
+
+**Development Environment (Direct Node):**
+```
+🚀 Batch #1: Processing 20 URLs
+📝 Content changed: 20 URLs (full processing)
+============================================================
+🗑️ Deleted 87 existing chunks for 19 URLs
+✅ Replaced chunks: 19 URLs, 121 new chunks
+✅ Batch #1 completed in 6891ms: 127 chunks generated
 ```
 ### Intelligent Processing Strategy
 
