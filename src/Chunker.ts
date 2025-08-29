@@ -15,7 +15,7 @@
  *
  * 【Algorithm Flow】
  * 1. Accept title parameter from ContentProcessor (document metadata)
- * 2. Dynamic calculation: target_chunk_count = total_length ÷ 2500
+ * 2. Dynamic calculation: target_chunk_count = round(total_length ÷ 2500)
  * 3. Before each split: chunk_size = remaining_length ÷ remaining_chunks
  * 4. Find best split point near target position by priority
  * 5. Last chunk contains all remaining content with auto quality assurance
@@ -42,7 +42,6 @@ import { BatchErrorHandler } from "./utils/batch-error-handler.js";
 export class Chunker {
   // Core configuration constants (matching Python implementation)
   private static readonly TARGET_CHUNK_SIZE = 2500;
-  private static readonly MAX_CHUNK_SIZE = 3000;
   private static readonly SEARCH_RANGE = 250;
 
   // Smart split priority patterns (matching Python implementation)
@@ -100,10 +99,6 @@ export class Chunker {
       return [];
     }
 
-    if (text.length <= Chunker.MAX_CHUNK_SIZE) {
-      return [this._createChunkJson(title, text)];
-    }
-
     // Execute dynamic adaptive splitting with title
     return this._adaptiveSplit(text, title);
   }
@@ -112,9 +107,11 @@ export class Chunker {
    * Dynamic adaptive splitting strategy - Combine dynamic calculation and smart split points
    */
   private _adaptiveSplit(content: string, title: string): string[] {
+    // Use Math.round for target chunk count to achieve more balanced distribution
+    // e.g., 4900 length → round(4900/2500) = 2 chunks instead of 1
     const targetChunkCount = Math.max(
       1,
-      Math.floor(content.length / Chunker.TARGET_CHUNK_SIZE)
+      Math.round(content.length / Chunker.TARGET_CHUNK_SIZE)
     );
 
     const chunks: string[] = [];
