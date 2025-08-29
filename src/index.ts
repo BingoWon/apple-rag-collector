@@ -99,8 +99,8 @@ async function main(): Promise<void> {
       // Note: hasData is always true in continuous processing system
       // Database queries always return existing URLs with incremented collect_count
 
-      // Send progress report every 1000 batches
-      if (result.batchNumber % PROGRESS_REPORT_INTERVAL === 0) {
+      // Send progress report every PROGRESS_REPORT_INTERVAL batches, including the first batch
+      if (result.batchNumber % PROGRESS_REPORT_INTERVAL === 1) {
         if (telegramNotifier.isEnabled()) {
           try {
             const stats = await dbManager.getStats();
