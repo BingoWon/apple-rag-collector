@@ -25,15 +25,21 @@ if ! grep -q "apple-rag-collector" package.json; then
     exit 1
 fi
 
+# Store current commit hash before pulling
+CURRENT_COMMIT=$(git rev-parse HEAD)
+
 # 1. Pull latest changes
 echo "📥 Pulling latest changes..."
 git pull origin main
 
-# 1.1. Check if deploy.sh was updated and restart if needed
-if [[ "${DEPLOY_SCRIPT_RESTARTED}" != "true" ]] && git diff HEAD@{1} HEAD --name-only 2>/dev/null | grep -q "deploy.sh"; then
-  echo "🔄 Deploy script was updated, restarting with new version..."
-  export DEPLOY_SCRIPT_RESTARTED=true
-  exec bash "$0" "$@"
+# 1.1. Check if deploy.sh was updated and restart if needed (only if not already restarted)
+if [[ "${DEPLOY_SCRIPT_RESTARTED}" != "true" ]]; then
+  NEW_COMMIT=$(git rev-parse HEAD)
+  if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && git diff "$CURRENT_COMMIT" "$NEW_COMMIT" --name-only | grep -q "deploy.sh"; then
+    echo "🔄 Deploy script was updated, restarting with new version..."
+    export DEPLOY_SCRIPT_RESTARTED=true
+    exec bash "$0" "$@"
+  fi
 fi
 
 # 2. Install dependencies (if needed)
