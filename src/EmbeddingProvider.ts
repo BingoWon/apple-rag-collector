@@ -19,6 +19,7 @@
  */
 
 import { KeyManager } from "./KeyManager.js";
+import { Logger } from "./utils/logger.js";
 
 // ============================================================================
 // Configuration
@@ -52,10 +53,12 @@ export function createEmbeddingConfig(): EmbeddingConfig {
 export class BatchEmbeddingProvider {
   private readonly config: EmbeddingConfig;
   private readonly keyManager: KeyManager;
+  private readonly logger: Logger;
 
-  constructor(config: EmbeddingConfig) {
+  constructor(config: EmbeddingConfig, logger?: Logger) {
     this.config = config;
     this.keyManager = new KeyManager();
+    this.logger = logger || new Logger("info");
   }
 
   /**
@@ -86,6 +89,45 @@ export class BatchEmbeddingProvider {
             }
           } catch (error) {
             lastError = error as Error;
+            const errorMessage = (error as Error).message;
+
+            // Enhanced error logging with specific handling
+            if (this.isTimeoutError(error as Error)) {
+              this.logger.warn(
+                `⏰ Embedding API timeout (${this.config.timeout}ms) - Batch size: ${texts.length} texts`,
+                {
+                  timeout: this.config.timeout,
+                  batchSize: texts.length,
+                  retry: retry + 1,
+                  keyAttempt: keyAttempt + 1,
+                  error: errorMessage,
+                }
+              );
+            } else if (this.isApiKeyError(error as Error)) {
+              this.logger.warn(`🔑 API key error - Removing invalid key`, {
+                error: errorMessage,
+                keyAttempt: keyAttempt + 1,
+              });
+              await this.keyManager.removeKey(apiKey);
+              break; // Try next key
+            } else if (this.isRateLimitError(error as Error)) {
+              this.logger.warn(
+                `🚦 Rate limit exceeded - Switching to next key`,
+                {
+                  error: errorMessage,
+                  keyAttempt: keyAttempt + 1,
+                }
+              );
+              this.keyManager.switchToNextKey();
+              break; // Try next key
+            } else {
+              this.logger.warn(`🔄 Embedding API error`, {
+                error: errorMessage,
+                retry: retry + 1,
+                keyAttempt: keyAttempt + 1,
+                batchSize: texts.length,
+              });
+            }
 
             if (this.isApiKeyError(error as Error)) {
               await this.keyManager.removeKey(apiKey);
@@ -169,6 +211,16 @@ export class BatchEmbeddingProvider {
     return error.message.toLowerCase().includes("429");
   }
 
+  private isTimeoutError(error: Error): boolean {
+    const msg = error.message.toLowerCase();
+    return (
+      error.name === "AbortError" ||
+      msg.includes("aborted") ||
+      msg.includes("timeout") ||
+      msg.includes("operation was aborted")
+    );
+  }
+
   private isRetryableError(error: Error): boolean {
     const msg = error.message.toLowerCase();
     return (
@@ -200,13 +252,16 @@ let currentPid: number | null = null;
 /**
  * Get or create process-safe global batch embedding provider
  */
-function getBatchProvider(config?: EmbeddingConfig): BatchEmbeddingProvider {
+function getBatchProvider(
+  config?: EmbeddingConfig,
+  logger?: Logger
+): BatchEmbeddingProvider {
   const currentProcessPid = process.pid;
 
   if (globalBatchProvider === null || currentPid !== currentProcessPid) {
     currentPid = currentProcessPid;
     const finalConfig = config || createEmbeddingConfig();
-    globalBatchProvider = new BatchEmbeddingProvider(finalConfig);
+    globalBatchProvider = new BatchEmbeddingProvider(finalConfig, logger);
   }
 
   return globalBatchProvider;
@@ -220,11 +275,15 @@ function getBatchProvider(config?: EmbeddingConfig): BatchEmbeddingProvider {
  * Create L2 normalized embeddings for batch of texts - True batch API call
  *
  * @param texts Array of texts to encode
+ * @param logger Optional logger for enhanced error reporting
  * @returns Array of L2 normalized embedding vectors
  */
-export async function createEmbeddings(texts: string[]): Promise<number[][]> {
+export async function createEmbeddings(
+  texts: string[],
+  logger?: Logger
+): Promise<number[][]> {
   if (!texts.length) return [];
 
-  const provider = getBatchProvider();
+  const provider = getBatchProvider(undefined, logger);
   return await provider.encodeBatch(texts);
 }

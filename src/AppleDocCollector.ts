@@ -160,7 +160,9 @@ class AppleDocCollector {
     });
 
     const embeddings =
-      embeddingTexts.length > 0 ? await createEmbeddings(embeddingTexts) : [];
+      embeddingTexts.length > 0
+        ? await createEmbeddings(embeddingTexts, this.logger)
+        : [];
 
     // Stage 6: Batch Storage for Changed Content
     if (allChunks.length > 0) {

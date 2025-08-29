@@ -129,10 +129,39 @@ async function main(): Promise<void> {
 
       // Continue to next batch immediately
     } catch (error) {
-      await logger.error("Batch processing failed", {
-        error: error instanceof Error ? error.message : "Unknown error",
-        stack: error instanceof Error ? error.stack : undefined,
-      });
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      const isTimeoutError =
+        error instanceof Error &&
+        (error.name === "AbortError" ||
+          errorMessage.toLowerCase().includes("aborted") ||
+          errorMessage.toLowerCase().includes("timeout") ||
+          errorMessage.toLowerCase().includes("operation was aborted"));
+
+      if (isTimeoutError) {
+        await logger.error("🚨 Batch processing failed due to API timeout", {
+          error: errorMessage,
+          timeout: process.env["EMBEDDING_API_TIMEOUT"] || "30",
+          batchSize: appConfig.batchProcessing.batchSize,
+          suggestion:
+            "Consider increasing EMBEDDING_API_TIMEOUT or reducing BATCH_SIZE",
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+
+        // Send specific timeout notification
+        if (telegramNotifier.isEnabled()) {
+          await telegramNotifier.notifyError(
+            new Error(
+              `⏰ API Timeout: ${errorMessage}. Timeout: ${process.env["EMBEDDING_API_TIMEOUT"] || "30"}s, Batch: ${appConfig.batchProcessing.batchSize}`
+            )
+          );
+        }
+      } else {
+        await logger.error("Batch processing failed", {
+          error: errorMessage,
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+      }
 
       await dbManager.close();
       process.exit(1);
