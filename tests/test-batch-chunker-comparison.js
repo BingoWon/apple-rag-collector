@@ -7,9 +7,9 @@ import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 
 // Import our unified processors and chunker
-import { AppleAPIClient } from '../dist/AppleAPIClient.js';
-import { ContentProcessor } from '../dist/ContentProcessor.js';
-import { Chunker } from '../dist/Chunker.js';
+import { AppleAPIClient } from '../src/AppleAPIClient.js';
+import { ContentProcessor } from '../src/ContentProcessor.js';
+import { Chunker } from '../src/Chunker.js';
 
 // ES module compatibility
 const __filename = fileURLToPath(import.meta.url);
@@ -77,10 +77,24 @@ async function collectContent(url) {
     const apiClient = new AppleAPIClient();
     const contentProcessor = new ContentProcessor();
     
-    const apiData = await apiClient.fetchDocumentJSON(url);
-    const processedContent = contentProcessor.processDocument(apiData);
-    
-    return processedContent.content;
+    const apiResult = await apiClient.fetchDocuments([url]);
+    console.log(`API Result for ${url}:`, apiResult[0]?.data ? 'success' : 'failed', apiResult[0]?.error);
+
+    if (!apiResult[0]?.data) {
+      throw new Error(`Failed to fetch document: ${apiResult[0]?.error || 'Unknown error'}`);
+    }
+
+    const processedResult = await contentProcessor.processDocuments(apiResult);
+    console.log(`Processed Result for ${url}:`, processedResult[0]?.data ? 'success' : 'failed', processedResult[0]?.error);
+    console.log(`Processed Result structure:`, JSON.stringify(processedResult[0], null, 2));
+
+    if (!processedResult[0]?.data) {
+      throw new Error(`Failed to process document: ${processedResult[0]?.error || 'Unknown error'}`);
+    }
+
+    const processedContent = processedResult[0].data;
+
+    return processedContent;
   } catch (error) {
     logError(`Content collection failed for ${url}`, error);
     throw error;
@@ -88,11 +102,21 @@ async function collectContent(url) {
 }
 
 // Run TypeScript chunking
-function runTypeScriptChunking(content) {
+function runTypeScriptChunking(processedData) {
   try {
-    const chunker = new Chunker();
-    const chunks = chunker.chunkText(content);
-    return chunks;
+    const chunker = new Chunker({ batchSize: 1 });
+    // Use batch processing interface - this is the correct pure batch architecture
+    const batchResults = chunker.chunkTexts([{
+      url: 'test-url',
+      title: processedData.title,
+      content: processedData.content
+    }]);
+
+    if (batchResults.length > 0 && batchResults[0].data) {
+      return batchResults[0].data;
+    } else {
+      throw new Error(batchResults[0]?.error || 'Chunking failed');
+    }
   } catch (error) {
     logError('TypeScript chunking failed', error);
     throw error;
@@ -100,20 +124,22 @@ function runTypeScriptChunking(content) {
 }
 
 // Run Python chunking
-function runPythonChunking(content) {
+function runPythonChunking(processedData) {
   return new Promise((resolve, reject) => {
     const pythonScript = `
 import sys
 import json
 sys.path.append('${__dirname}')
-from chunker import Chunker
+from chunker import SmartChunker
 
-# Read content from stdin
-content = sys.stdin.read()
+# Read input from stdin
+input_data = json.loads(sys.stdin.read())
+content = input_data['content']
+title = input_data.get('title', '')
 
 # Initialize chunker and process
-chunker = Chunker()
-chunks = chunker.chunk_text(content)
+chunker = SmartChunker()
+chunks = chunker.chunk_text(content, title)
 
 # Output results as JSON
 result = {
@@ -162,8 +188,8 @@ print(json.dumps(result, ensure_ascii=False))
       }
     });
     
-    // Send content to Python process
-    pythonProcess.stdin.write(content);
+    // Send processed data to Python process
+    pythonProcess.stdin.write(JSON.stringify(processedData));
     pythonProcess.stdin.end();
   });
 }
@@ -216,15 +242,15 @@ async function testSingleUrl(url, index, total) {
   
   try {
     // Step 1: Collect content
-    const content = await collectContent(url);
-    logInfo(`Content collected (${content.length} characters)`);
-    
+    const processedData = await collectContent(url);
+    logInfo(`Content collected (${processedData.content.length} characters)`);
+
     // Step 2: Run TypeScript chunking
-    const tsChunks = runTypeScriptChunking(content);
+    const tsChunks = runTypeScriptChunking(processedData);
     logInfo(`TypeScript chunking completed (${tsChunks.length} chunks)`);
-    
+
     // Step 3: Run Python chunking
-    const pyChunks = await runPythonChunking(content);
+    const pyChunks = await runPythonChunking(processedData);
     logInfo(`Python chunking completed (${pyChunks.length} chunks)`);
     
     // Step 4: Compare results
@@ -237,7 +263,8 @@ async function testSingleUrl(url, index, total) {
     }
     
     fs.writeFileSync(path.join(urlDir, 'url.txt'), url);
-    fs.writeFileSync(path.join(urlDir, 'content.md'), content);
+    fs.writeFileSync(path.join(urlDir, 'content.md'), processedData.content);
+    fs.writeFileSync(path.join(urlDir, 'processed_result.json'), JSON.stringify(processedData, null, 2));
     fs.writeFileSync(path.join(urlDir, 'typescript_chunks.json'), JSON.stringify(tsChunks, null, 2));
     fs.writeFileSync(path.join(urlDir, 'python_chunks.json'), JSON.stringify(pyChunks, null, 2));
     fs.writeFileSync(path.join(urlDir, 'comparison.json'), JSON.stringify(comparison, null, 2));

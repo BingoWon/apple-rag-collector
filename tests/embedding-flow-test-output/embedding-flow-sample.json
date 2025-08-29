@@ -1,0 +1,154 @@
+{
+  "totalChunks": 24,
+  "sampleEmbeddingTexts": [
+    "Article: Xcode 26 Beta 7 Release Notes\nUpdate your apps to use new features, and test your apps against API changes.\n\n## Overview\nXcode 26 beta 7 includes SDKs for iOS 26, iPadOS 26, tvOS 26, watchOS 26, macOS Tahoe 26, and visionOS 26. The Xcode 26 beta 7 release supports on-device debugging in iOS 16 and later, tvOS 16 and later, watchOS 8 and later, and visionOS. Xcode 26 beta 7 requires a Mac running macOS Sequoia 15.5 or later.\n### General\n#### Known Issues\n- The Related Items menu has been simplified to items to improve editor load times. Assistant Categories like Callers are still available in the Assistant Editor. There is also similar functionality available via editor context menus or in the Find Navigator.  (147335052)\n- Simulators may fail to boot during the first build after upgrading macOS; rebuilding after a short wait typically resolves the issue.  (152328794)\n- Sometimes the “Cancel” button in the Coding Assistant status bar fails to stop the currently executing message.  (152546155)\n Use the Coding Assistant navigator directly, and click “Cancel”.\n- Users updating from earlier Xcode 26 betas may experience an error such as “fatal error: ‘iostream’ file not found” when using C++ standard headers.  (152924178) (FB17859821)\n In Terminal, execute the command:\n```\n sudo rm -rf /Library/Developer/CommandLineTools/usr/include/c++/v1\n```\n\n\n### Address Sanitizer\n#### Known Issues\n- Address Sanitizer C++ container overflow checks are no longer disabled by default and cannot be disabled at compile time from Xcode build settings.  (157770563)\n Disable the checks at run time with by setting the `ASAN_OPTIONS` environment variable to `detect_container_overflow=0` or adding it to your existing `ASAN_OPTIONS`. Add this setting to the Environment Variables list in the Arguments tab of the Run scheme in the scheme editor and in the Configurations tab of any Test Plan that uses Address Sanitizer.\n\n\n### App Intents\n#### Known Issues\n- UISceneAppIntent.performNavigation(forScene:) not always called.  (152254774)\n\n\n### Background Assets\n#### Known Issues\n- When running the mock server (`ba-serve`), the Choose Identity panel might appear behind all other windows and be absent in Mission Control.  (152256482)\n Move all other windows out of the way to reveal the panel.\n\n\n### Code Assistant\n#### Known Issues\n- Remote model configuration fields clear when Xcode loses focus.  (157071086)\n Complete model setup without switching away from Xcode.\n\n\n### Coding Intelligence\n####",
+    "Article: Xcode 26 Beta 7 Release Notes\nUpdate your apps to use new features, and test your apps against API changes.\n\nNew Features\n- Claude in Xcode is now available in the Intelligence settings panel, allowing users to seamlessly add their existing paid Claude account to Xcode and start using Claude Sonnet 4.  (155826755)\n- When using ChatGPT in Xcode, users can now start a new conversation with either GPT-4.1 or GPT-5, with GPT-5 set as the default.  (158342780)\n- ChatGPT in Xcode provides two model choices. “GPT-5” is optimized for quick, high-quality results, and should work well for most coding tasks. For difficult tasks, choose “GPT-5 (Reasoning)“, which spends more time thinking before responding, and can provide more accurate results for complex coding tasks.\nIn the OpenAI API, “GPT-5” corresponds to the “minimal” reasoning level, and “GPT-5 (Reasoning)” corresponds to the “low” reasoning level.  (159135374)\n\n\n#### Known Issues\n- When applying changes using coding intelligence, breakpoints in affected files may move.  (146888202)\n- When using coding intelligence, the model is unable to view or modify files with identical names simultaneously.   (147450585)\n- Previously deleted files may appear in the modification history as having been deleted by a recent coding assistant conversation.  (152545638)\n- Coding intelligence provides inconsistent results when modifying files that contain thousands of lines.   (152590014)\n\n\n### Group Activities\n#### Known Issues\n- The DestinationVideo sample code doesn’t compile.  (147074640)\n Replace `import GroupActivities` with `@preconcurrency import GroupActivities`.\n\n\n### Icon Composer\n#### Known Issues\n- Exporting a single PNG, or using the “Copy Icon as Image” menu item, for Clear Light, Clear Dark, Tinted Light, or Tinted Dark will produce an unexpected dark image.   (148998556)\n Use the export all functionality from the export sheet.\n\n\n### Instruments\n#### Known Issues\n- No data is present when recording the CPU Counters on macOS devices in the “Streaming SME Bottlenecks” or “Instruction Processing Bottlenecks” modes.  (152179757)\n\n\n### Metal\n#### Known Issues\n- GPU Profiling in Metal Debugger is not available for Metal 4.  (136244517)\n- Metal 4 Sparse resources are not supported in Metal Debugger.  (136326816)\n- Shader Debugging in Metal Debugger is not available for Metal 4.  (136626557)\n- Compiling Metal shaders with the latest Xcode 26 Metal toolchain for iOS 18, macOS 15, tvOS 18, and visionOS 2 deployment targets may not produce valid GPU binaries.   (150887778)\n Use previous Xcode 16.3 Metal toolchain to compile Metal shaders to GPU binaries for those deployment targets.\n\n\n### Playgrounds\n#### Known Issues\n- Canvas doesn’t show results for #Playground blocks in “Legacy Previews Execution”.  (150811580)\n\n\n### Reality Composer Pro\n####",
+    "Article: Xcode 26 Beta 7 Release Notes\nUpdate your apps to use new features, and test your apps against API changes.\n\nKnown Issues\n- The Send to Device toolbar item down arrow does not draw correctly.   (147957053)\n You can still click the toolbar item to access the Send to Device menu. Alternatively, you can use File > Device in the menu bar.\n\n\n### Source Editor\n#### Known Issues\n- Change bars may be out of date when reverting changes from the coding assistant.   (152399120)\n\n\n### Swift Splash\n#### Known Issues\n- The Swift Splash sample app may crash on launch.  (155922631)\n\n\n### Testing\n#### Known Issues\n- Swift Testing exit tests may produce crash logs in /Library/.  (47982238)\n- Attachments are not recorded from within the bodies of exit tests when using Swift Testing.  (149242118)\n\n\n## Updates in Xcode 26 Beta 6\n### Coding Intelligence\n#### Resolved Issues in Xcode 26 Beta 6\n- Fixed: The coding assistant can be disabled via device management in Xcode 26 Beta 6 by setting `CodingAssistantAllowExternalIntegrations` to false in a configuration profile with a `com.apple.dt.Xcode` `PayloadType`.  (152372875)\n\n\n## Updates in Xcode 26 Beta 5\n### General\n#### Resolved Issues in Xcode 26 Beta 5\n- Fixed: To mimic Xcode 16 tab behavior use these settings: Xcode -> Settings -> Navigation -> Pin Tabs -> When Document Is Edited View > Show Editor Tab Bar  (153670772) (FB18158843)\n- Fixed: In Settings > Navigation, Option+Click and Option+Shift+Click can be configured to Use New Unpinned Tab or Use New Pinned Tab  (154324695)\n- Fixed: The XcodeXIP (Apple silicon only) cannot build source editor extensions.  (157257485)\n\n\n### Coding Intelligence\n#### Resolved Issues in Xcode 26 Beta 5\n- Fixed: Sometimes the coding assistant may appear empty after sending a message.    (152511782)\n- Fixed: Coding intelligence features in Xcode have improved compatibility with popular third-party APIs using the “chat completions” format.  (155337963)\n\n\n### Debugger\n#### Resolved Issues in Xcode 26 Beta 5\n- Fixed: Run action incorrectly launched a duplicate app instance when using SwiftUI Previews, or when running a command line app which opens windows using SDL, GLFW, or NSApplication APIs without being packaged as an app bundle.  (134287948) (FB14859622)\n\n\n### Foundation\n#### Resolved Issues in Xcode 26 Beta 5\n- Fixed: `#bundle` does not refer to the correct resource bundle when used from a mergeable library.  (150698070)\n\n\n### GameKit\n#### Resolved Issues in Xcode 26 Beta 5\n- Fixed: Push and Pull to App Store Connect may fail.   (155814090)\n\n\n### Icon Composer\n#### Resolved Issues in Xcode 26 Beta 5\n- Fixed: User supplied background images in Icon Composer are composited at the same scale as the 2048x2048 pixel icon renderings, and thus appear much smaller than expected.   (148133443)\n\n\n### Interface Builder\n####"
+  ],
+  "statistics": [
+    {
+      "chunkIndex": 0,
+      "length": 2508,
+      "lines": 43,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 1,
+      "length": 2836,
+      "lines": 50,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 2,
+      "length": 2836,
+      "lines": 66,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 3,
+      "length": 2518,
+      "lines": 48,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 4,
+      "length": 2895,
+      "lines": 55,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 5,
+      "length": 2581,
+      "lines": 47,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 6,
+      "length": 2766,
+      "lines": 58,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 7,
+      "length": 2711,
+      "lines": 63,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 8,
+      "length": 2652,
+      "lines": 52,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 9,
+      "length": 2744,
+      "lines": 40,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 10,
+      "length": 2854,
+      "lines": 21,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 11,
+      "length": 2775,
+      "lines": 20,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 12,
+      "length": 2558,
+      "lines": 24,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 13,
+      "length": 2777,
+      "lines": 29,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 14,
+      "length": 2691,
+      "lines": 12,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 15,
+      "length": 2505,
+      "lines": 30,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 16,
+      "length": 2633,
+      "lines": 18,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 17,
+      "length": 2691,
+      "lines": 28,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 18,
+      "length": 2671,
+      "lines": 35,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 19,
+      "length": 2708,
+      "lines": 31,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 20,
+      "length": 2513,
+      "lines": 23,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 21,
+      "length": 2293,
+      "lines": 46,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 22,
+      "length": 2707,
+      "lines": 25,
+      "hasTitle": true
+    },
+    {
+      "chunkIndex": 23,
+      "length": 2371,
+      "lines": 16,
+      "hasTitle": true
+    }
+  ]
+}

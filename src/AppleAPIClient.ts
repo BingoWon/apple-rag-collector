@@ -1,24 +1,15 @@
 
-import { type AppleAPIResponse, type BatchConfig, type BatchResult } from './types/index.js';
+import { type AppleAPIResponse, type BatchResult } from './types/index.js';
 import { BatchErrorHandler } from './utils/batch-error-handler.js';
 
 class AppleAPIClient {
   private static readonly JSON_API_BASE = 'https://developer.apple.com/tutorials/data' as const;
 
-  constructor(private readonly config: BatchConfig) {}
-
   async fetchDocuments(urls: string[]): Promise<BatchResult<AppleAPIResponse>[]> {
-    const results: BatchResult<AppleAPIResponse>[] = [];
-
-    for (let i = 0; i < urls.length; i += this.config.batchSize) {
-      const batch = urls.slice(i, i + this.config.batchSize);
-      const batchResults = await Promise.all(
-        batch.map(url => this.fetchSingleDocument(url))
-      );
-      results.push(...batchResults);
-    }
-
-    return results;
+    // Direct concurrent fetching - no sub-batching needed
+    return await Promise.all(
+      urls.map(url => this.fetchSingleDocument(url))
+    );
   }
 
   private async fetchSingleDocument(documentUrl: string): Promise<BatchResult<AppleAPIResponse>> {

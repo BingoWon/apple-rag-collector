@@ -1,7 +1,9 @@
 /**
  * Modern logging system for Node.js applications
- * Supports structured logging with configurable levels
+ * Supports structured logging with configurable levels and webhook notifications
  */
+
+import { telegramNotifier } from './telegram-notifier.js';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -48,12 +50,21 @@ class Logger {
   warn(message: string, data?: Record<string, unknown>): void {
     if (this.shouldLog('warn')) {
       console.warn(this.formatMessage('warn', message, data));
+      // 发送Telegram警告通知
+      telegramNotifier.notifyWarning(message).catch(() => {
+        // 静默处理Telegram错误
+      });
     }
   }
 
   error(message: string, data?: Record<string, unknown>): void {
     if (this.shouldLog('error')) {
       console.error(this.formatMessage('error', message, data));
+      // 发送Telegram错误通知
+      const error = new Error(message);
+      telegramNotifier.notifyError(error).catch(() => {
+        // 静默处理Telegram错误
+      });
     }
   }
 

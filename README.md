@@ -1,34 +1,21 @@
 # Apple RAG Collector
 
-**Pure Batch Processing Architecture for Apple Developer Documentation**
+Batch processing system for Apple Developer Documentation with 5-10x performance improvements.
 
-A production-ready system that processes Apple Developer Documentation using **pure batch processing architecture**. Every component is designed for batch operations only - there are no single processing methods anywhere in the system. This architecture delivers 5-10x performance improvements over traditional single-item processing.
+## Features
 
-> **🚀 Pure Batch Processing**: This project uses exclusively batch processing - no single processing methods exist. All operations are batched for maximum efficiency.
+- High-performance batch processing with simplified architecture
+- Smart content comparison (70-75% resource savings)
+- Apple Developer documentation focus with URL filtering
+- TypeScript + PostgreSQL + Vector storage
+- Configurable database batching
+- Production-ready error handling
+- Streamlined database operations
+- Real-time Telegram Bot notifications for errors and system status
 
-## 🌟 Pure Batch Processing Features
+## 🏗️ Architecture
 
-- **🚀 Pure Batch Architecture**: Zero single processing methods - everything is batched
-- **⚡ 5-10x Performance**: Batch processing delivers massive performance improvements
-- **🧠 Intelligent Content Comparison**: Smart change detection with 70-75% performance boost
-- **🔄 Seven-Stage Intelligent Pipeline**: Collecting → Comparison → Conditional Processing → Chunking → Embedding → Storage → Lightweight Updates
-- **📦 Batch-First Design**: All components designed from ground up for batch operations
-- **🎯 Batch Configuration**: Single `batchSize` parameter controls all operations
-- **🛡️ Batch Error Handling**: Robust error handling within batch operations
-- **💾 Batch Database Operations**: True PostgreSQL batch inserts and updates
-- **🔍 Batch Content Processing**: Process multiple documents simultaneously
-- **🌐 Batch URL Discovery**: Extract URLs from multiple documents in one operation
-- **📊 Batch Monitoring**: Track batch performance and throughput
-
-## 🎯 System Status
-
-**Current State**: Pure Batch Processing Architecture - Production Ready
-**Processing Mode**: Batch-only operations - no single processing methods exist
-**Architecture**: Pure Batch Processing + PostgreSQL + TypeScript
-
-## 🏗️ Pure Batch Processing Architecture
-
-### Seven-Stage Intelligent Pipeline
+### Processing Pipeline
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │ Batch Collecting│───▶│ Content Compare │───▶│Conditional Proc │───▶│Conditional Chunk│
@@ -45,7 +32,7 @@ A production-ready system that processes Apple Developer Documentation using **p
          │              └─────────────────┘                                    │
          │                                                                     ▼
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   apple_docs    │◀───│ Batch Storage   │◀───│ Batch Embedding │◀───│                 │
+│     pages       │◀───│ Batch Storage   │◀───│ Batch Embedding │◀───│                 │
 │     Table       │    │                 │    │                 │    │                 │
 │  URLs + JSON    │    │ insertChunks    │    │createEmbeddings │    │                 │
 └─────────────────┘    │ (chunks[])      │    │ (changed[])     │    │                 │
@@ -58,14 +45,33 @@ A production-ready system that processes Apple Developer Documentation using **p
                         └─────────────────┘
 ```
 
-### Intelligent Processing Principles
-- **❌ No Single Processing**: Zero methods that process individual items
-- **✅ Batch Only**: All methods accept and return arrays
-- **🧠 Smart Comparison**: Intelligent content change detection before processing
-- **🔄 Conditional Processing**: Only process content that has actually changed
-- **📊 Lightweight Updates**: Minimal database updates for unchanged content
-- **🚀 Performance**: 5-10x faster than single-item processing, 70-75% resource savings
-- **🔄 Batch Coordination**: AppleDocCollector orchestrates all batch operations
+
+
+## 🎯 Enhanced Embedding Generation
+
+The system now features optimized embedding generation that combines document titles with content for superior semantic representation:
+
+### Title + Content Integration
+- **Document Context**: Each chunk includes the full document title (e.g., "Article: Xcode 26 Beta 7 Release Notes")
+- **Semantic Completeness**: Embeddings contain both document metadata and content for better retrieval
+- **Consistent Structure**: All chunks from the same document share the same title context
+
+### Embedding Text Format
+```
+Article: Xcode 26 Beta 7 Release Notes
+Update your apps to use new features, and test your apps against API changes.
+
+## Overview
+Xcode 26 beta 7 includes SDKs for iOS 26, iPadOS 26...
+```
+
+### JSON Chunk Structure
+```json
+{
+  "title": "Article: Xcode 26 Beta 7 Release Notes\nUpdate your apps to use new features...",
+  "content": "## Overview\nXcode 26 beta 7 includes SDKs..."
+}
+```
 
 ## 🧠 Intelligent Content Comparison
 
@@ -99,6 +105,9 @@ if (unchangedResults.length > 0) {
 - **70-75% Resource Savings**: Skip processing, chunking, and embedding for unchanged content
 - **Precise Database Updates**: Only update `collect_count` for unchanged records
 - **Timestamp Preservation**: Keep `updated_at` unchanged when content hasn't changed
+- **Apple Developer Focus**: URL filtering ensures only relevant documentation is processed
+- **Simplified Operations**: Streamlined batch insert operations for better maintainability
+- **Real-time Monitoring**: Instant Telegram notifications for errors and system status
 
 ### Core Components
 ```
@@ -137,13 +146,13 @@ tests/
 
 The system uses two main PostgreSQL tables with optimized indexing:
 
-### `apple_docs` Table
-Stores original Apple documentation data and processing metadata.
+### `pages` Table
+Stores Apple Developer documentation data and processing metadata.
 
 ```sql
-CREATE TABLE apple_docs (
+CREATE TABLE pages (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  source_url    TEXT NOT NULL UNIQUE,           -- Original Apple documentation URL
+  url           TEXT NOT NULL UNIQUE,           -- Apple Developer documentation URL
   raw_json      JSONB,                          -- Raw API response from Apple
   title         TEXT,                           -- Extracted document title
   content       TEXT,                           -- Processed markdown content
@@ -153,9 +162,12 @@ CREATE TABLE apple_docs (
 );
 
 -- Optimized indexes for batch processing and queries
-CREATE INDEX idx_apple_docs_collect_count_url ON apple_docs(collect_count, source_url);
-CREATE INDEX idx_apple_docs_created_at ON apple_docs(created_at);
-CREATE INDEX idx_apple_docs_raw_json ON apple_docs USING GIN (raw_json);
+CREATE INDEX idx_pages_collect_count_url ON pages(collect_count, url);
+CREATE INDEX idx_pages_created_at ON pages(created_at);
+CREATE INDEX idx_pages_updated_at ON pages(updated_at);
+CREATE INDEX idx_pages_title ON pages(title);
+CREATE INDEX idx_pages_url ON pages(url);
+CREATE INDEX idx_pages_raw_json ON pages USING GIN (raw_json);
 ```
 
 ### `chunks` Table
@@ -166,7 +178,7 @@ CREATE TABLE chunks (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   url        TEXT NOT NULL,                     -- Source document URL
   content    TEXT NOT NULL,                     -- Chunked content (JSON format)
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
   embedding  HALFVEC(2560)                      -- Half-precision 2560-dim vectors
 );
 
@@ -194,6 +206,16 @@ pnpm run pm2:start
 ```
 
 
+## Telegram Bot Notifications
+
+Simple and efficient Telegram Bot notifications for real-time monitoring. All errors, warnings, and system status updates are sent directly to your Telegram chat.
+
+### Features
+- **Minimal Setup**: Just one environment variable
+- **Zero Configuration**: Direct URL usage, no parameter parsing
+- **Real-time Alerts**: Instant notifications for system errors and warnings
+- **Clean Messages**: Simple HTML-formatted notifications
+- **Lightweight**: Only 59 lines of code total
 
 ### Environment Configuration
 
@@ -231,9 +253,9 @@ pnpm run pm2:stop
 ```
 
 **Database Statistics**
-The application automatically creates a `apple_docs_stats` view for monitoring:
+The application automatically creates a `pages_stats` view for monitoring:
 ```sql
-SELECT * FROM apple_docs_stats;
+SELECT * FROM pages_stats;
 ```
 
 **Log Output Example**
@@ -283,13 +305,7 @@ while (true) {
 }
 ```
 
-**Key Features**:
-- **Configurable Batch Size**: Environment-controlled processing batches
-- **Smart Prioritization**: URLs with lower collect_count processed first
-- **Rate Limiting**: Configurable delays between API calls and batches
-- **Unlimited Processing**: No time or API call limits
-- **PostgreSQL Storage**: JSONB support with unlimited size
-- **Graceful Shutdown**: Proper signal handling for clean exits
+
 
 ### 3. Data Integrity & Reliability
 **Robust Data Protection**:
@@ -445,29 +461,32 @@ The returned JSON contains several main sections:
 
 ### Optimized Indexing
 ```sql
--- Performance-critical indexes
-CREATE INDEX idx_apple_docs_collect_count_url ON apple_docs(collect_count, source_url);
-CREATE INDEX idx_apple_docs_updated_at ON apple_docs(updated_at);
-CREATE INDEX idx_apple_docs_raw_json ON apple_docs USING GIN (raw_json);
+-- Performance-critical indexes for Apple Developer documentation
+CREATE INDEX idx_pages_collect_count_url ON pages(collect_count, url);
+CREATE INDEX idx_pages_created_at ON pages(created_at);
+CREATE INDEX idx_pages_updated_at ON pages(updated_at);
+CREATE INDEX idx_pages_title ON pages(title);
+CREATE INDEX idx_pages_url ON pages(url);
+CREATE INDEX idx_pages_raw_json ON pages USING GIN (raw_json);
 ```
 
 ### Processing Logic
 ```sql
--- Intelligent batch record selection
-SELECT * FROM apple_docs
-WHERE updated_at IS NULL
-ORDER BY collect_count ASC, source_url ASC
+-- Intelligent batch record selection with Apple Developer URL filtering
+SELECT * FROM pages
+WHERE url LIKE 'https://developer.apple.com/%'
+ORDER BY collect_count ASC, url ASC
 LIMIT 25;
 ```
 
 **Key Features:**
-- **Smart Processing**: `updated_at IS NULL` identifies unprocessed records
+- **Apple Developer Focus**: Only processes official Apple Developer documentation URLs
+- **Smart URL Filtering**: Automatically excludes non-developer content (YouTube, GitHub, etc.)
 - **Priority System**: Lower `collect_count` = higher priority
 - **Automatic URL Discovery**: Extracted URLs automatically added as new records
 - **JSONB Storage**: Structured JSON with GIN indexing for fast queries
-- **Batch Operations**: True PostgreSQL batch inserts for maximum performance
+- **Simplified Batch Operations**: Streamlined PostgreSQL batch inserts for optimal performance
 - **Real-time Updates**: `updated_at` set to current timestamp on successful processing
-- `idx_apple_docs_title` - Title search optimization
 
 ## ⚠️ Important: pnpm Only
 
@@ -513,7 +532,7 @@ DB_SSL=false
 ```bash
 # Application Settings
 LOG_LEVEL=info
-BATCH_SIZE=25
+BATCH_SIZE=25  # Database record retrieval batch size
 
 # Database Connection
 DB_HOST=localhost
@@ -524,11 +543,7 @@ DB_PASSWORD=your_password
 DB_SSL=false
 ```
 
-**Configuration Features:**
-- ✅ Configurable batch size for optimal performance
-- ✅ Intelligent error handling with permanent error detection
-- ✅ Flexible database connection settings
-- ✅ Environment-specific configurations (dev/prod)
+
 
 ### 4. Development and Deployment
 ```bash
@@ -545,14 +560,7 @@ pnpm start
 pnpm run fmt
 ```
 
-## 🚀 Processing System
 
-### Intelligent Continuous Processing Architecture
-High-performance batch processing system that continuously re-processes all records to ensure data stays up-to-date.
-
-**Processing Mode**: Continuous processing while data exists
-**Batch Size**: Configurable (default: 25 records per batch)
-**Exit Strategy**: Graceful exit when no more data to process
 
 ### Processing Flow
 ```
@@ -604,51 +612,9 @@ Structured logging provides detailed progress information:
 }
 ```
 
-## 🎯 Design Principles
 
-### 1. High-Performance Architecture
-- **PostgreSQL Optimization**: JSONB storage with GIN indexing
-- **Batch Processing**: True database batch operations
-- **Intelligent Querying**: Optimized record selection with proper indexing
-- **Connection Pooling**: Efficient database connection management
 
-### 2. Modern Node.js Design
-- **TypeScript**: Full type safety and modern language features
-- **ESM Modules**: Modern JavaScript module system
-- **Structured Logging**: JSON-formatted logs for monitoring
-- **Error Handling**: Comprehensive error recovery and reporting
 
-### 3. Scalable Processing
-- **Configurable Batching**: Adjustable batch sizes for different environments
-- **Priority System**: Intelligent record processing based on collect_count
-- **Automatic URL Discovery**: Dynamic expansion of processing scope
-- **Graceful Exit**: Clean shutdown when processing is complete
-
-### 4. Production Ready
-- **Environment Configuration**: Separate dev/prod configurations
-- **Database Migrations**: Automatic table and index creation
-- **Error Recovery**: Robust error handling with permanent error detection
-- **Performance Monitoring**: Detailed metrics and timing information
-
-## 🏆 System Benefits
-
-### Performance Advantages
-- **High-Speed Processing**: PostgreSQL with optimized indexing
-- **Batch Operations**: True database batch inserts for maximum throughput
-- **Intelligent Querying**: Priority-based record selection
-- **Connection Efficiency**: Optimized connection pooling
-
-### Reliability Features
-- **Robust Error Handling**: Comprehensive error recovery mechanisms
-- **Automatic Recovery**: System continues from where it left off
-- **Error Isolation**: Single failures don't cascade to other operations
-- **Graceful Exit**: Clean shutdown when processing is complete
-
-### Operational Benefits
-- **Configurable**: Environment-specific settings for dev/prod
-- **Observable**: Structured JSON logging for monitoring
-- **Maintainable**: Clean TypeScript codebase with full type safety
-- **Scalable**: Efficient batch processing handles large datasets
 
 ## 📋 Available Commands
 

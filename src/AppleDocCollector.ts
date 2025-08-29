@@ -32,8 +32,8 @@ class AppleDocCollector {
   constructor(dbManager: PostgreSQLManager, _logger: Logger, config: BatchConfig) {
     this.dbManager = dbManager;
     this.config = config;
-    this.apiClient = new AppleAPIClient(config);
-    this.contentProcessor = new ContentProcessor(config);
+    this.apiClient = new AppleAPIClient();
+    this.contentProcessor = new ContentProcessor();
     this.chunker = new Chunker(config);
   }
 
@@ -55,7 +55,7 @@ class AppleDocCollector {
   }
 
   private async processBatch(records: DatabaseRecord[]): Promise<BatchResult> {
-    const urls = records.map(r => r.source_url);
+    const urls = records.map(r => r.url);
 
     // Stage 1: Batch Collecting
     const collectResults = await this.apiClient.fetchDocuments(urls);
@@ -83,7 +83,11 @@ class AppleDocCollector {
     // Stage 4: Chunk Only Changed Content
     const chunkResults = processResults.length > 0
       ? this.chunker.chunkTexts(
-          processResults.filter(r => r.data).map(r => ({ url: r.url, content: r.data!.content }))
+          processResults.filter(r => r.data).map(r => ({
+            url: r.url,
+            title: r.data!.title,
+            content: r.data!.content
+          }))
         )
       : [];
 
@@ -91,8 +95,21 @@ class AppleDocCollector {
     const allChunks = chunkResults.flatMap(r =>
       r.data ? r.data.map(chunk => ({ url: r.url, chunk })) : []
     );
-    const embeddings = allChunks.length > 0
-      ? await createEmbeddings(allChunks.map(c => c.chunk))
+
+    // Parse JSON chunks and combine title + content for embedding
+    const embeddingTexts = allChunks.map(c => {
+      try {
+        const parsed = JSON.parse(c.chunk);
+        // Combine title and content for optimal semantic representation
+        return parsed.title ? `${parsed.title}\n\n${parsed.content}` : parsed.content;
+      } catch (error) {
+        console.warn('Failed to parse chunk JSON, using raw chunk:', error);
+        return c.chunk;
+      }
+    });
+
+    const embeddings = embeddingTexts.length > 0
+      ? await createEmbeddings(embeddingTexts)
       : [];
 
     // Stage 6: Batch Storage for Changed Content
@@ -217,7 +234,7 @@ class AppleDocCollector {
         if (processResult?.data) {
           const updatedRecord: DatabaseRecord = {
             id: record.id,
-            source_url: record.source_url,
+            url: record.url,
             raw_json: comparison.newRawJson!,
             title: processResult.data.title,
             content: processResult.data.content,
@@ -232,7 +249,7 @@ class AppleDocCollector {
           const errorMessage = processResult?.error || 'Processing failed';
           const failureRecord: DatabaseRecord = {
             id: record.id,
-            source_url: record.source_url,
+            url: record.url,
             raw_json: null,
             title: null,
             content: `ERROR: ${errorMessage}`,
@@ -246,7 +263,7 @@ class AppleDocCollector {
         // 收集失败的记录
         const failureRecord: DatabaseRecord = {
           id: record.id,
-          source_url: record.source_url,
+          url: record.url,
           raw_json: null,
           title: null,
           content: `ERROR: ${error}`,
