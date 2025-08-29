@@ -51,24 +51,21 @@ class Logger {
     }
   }
 
-  warn(message: string, data?: Record<string, unknown>): void {
+  async warn(message: string, data?: Record<string, unknown>): Promise<void> {
     if (this.shouldLog("warn")) {
       console.warn(this.formatMessage("warn", message, data));
-      // 发送Telegram警告通知
-      telegramNotifier.notifyWarning(message).catch(() => {
-        // 静默处理Telegram错误
-      });
+      try {
+        await telegramNotifier.notifyWarning(message);
+      } catch {}
     }
   }
 
-  error(message: string, data?: Record<string, unknown>): void {
+  async error(message: string, data?: Record<string, unknown>): Promise<void> {
     if (this.shouldLog("error")) {
       console.error(this.formatMessage("error", message, data));
-      // 发送Telegram错误通知
-      const error = new Error(message);
-      telegramNotifier.notifyError(error).catch(() => {
-        // 静默处理Telegram错误
-      });
+      try {
+        await telegramNotifier.notifyError(new Error(message));
+      } catch {}
     }
   }
 

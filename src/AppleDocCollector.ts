@@ -6,11 +6,12 @@ import { PostgreSQLManager } from "./PostgreSQLManager.js";
 import { type DatabaseRecord, type BatchConfig } from "./types/index.js";
 import { Logger } from "./utils/logger.js";
 
-interface BatchResult {
+interface ProcessBatchResult {
   successRecords: DatabaseRecord[];
   failureRecords: DatabaseRecord[];
   deleteIds: string[];
   extractedUrls: Set<string>;
+  totalChunks: number;
 }
 
 interface ContentComparisonResult {
@@ -26,27 +27,41 @@ class AppleDocCollector {
   private readonly contentProcessor: ContentProcessor;
   private readonly chunker: Chunker;
   private readonly dbManager: PostgreSQLManager;
-
+  private readonly logger: Logger;
   private readonly config: BatchConfig;
+  private batchCounter: number = 0;
 
   constructor(
     dbManager: PostgreSQLManager,
-    _logger: Logger,
+    logger: Logger,
     config: BatchConfig
   ) {
     this.dbManager = dbManager;
+    this.logger = logger;
     this.config = config;
     this.apiClient = new AppleAPIClient();
     this.contentProcessor = new ContentProcessor();
     this.chunker = new Chunker(config);
   }
 
-  async execute(): Promise<boolean> {
+  async execute(): Promise<{
+    hasData: boolean;
+    batchNumber: number;
+    totalChunks: number;
+  }> {
     const records = await this.dbManager.getBatchRecords(this.config.batchSize);
 
     if (records.length === 0) {
-      return false;
+      return { hasData: false, batchNumber: this.batchCounter, totalChunks: 0 };
     }
+
+    this.batchCounter++;
+    const startTime = Date.now();
+
+    this.logger.debug(`\n${"=".repeat(60)}`);
+    this.logger.info(
+      `🚀 Batch #${this.batchCounter}: Processing ${records.length} URLs`
+    );
 
     const result = await this.processBatch(records);
     await this.dbManager.batchProcessRecords(
@@ -59,10 +74,22 @@ class AppleDocCollector {
       await this.dbManager.batchInsertUrls([...result.extractedUrls]);
     }
 
-    return true;
+    const duration = Date.now() - startTime;
+
+    this.logger.info(
+      `✅ Batch #${this.batchCounter} completed in ${duration}ms: ${result.totalChunks} chunks generated`
+    );
+
+    return {
+      hasData: true,
+      batchNumber: this.batchCounter,
+      totalChunks: result.totalChunks,
+    };
   }
 
-  private async processBatch(records: DatabaseRecord[]): Promise<BatchResult> {
+  private async processBatch(
+    records: DatabaseRecord[]
+  ): Promise<ProcessBatchResult> {
     const urls = records.map((r) => r.url);
 
     // Stage 1: Batch Collecting
@@ -82,12 +109,12 @@ class AppleDocCollector {
 
     // Log intelligent comparison results
     if (unchangedResults.length > 0) {
-      console.log(
+      this.logger.info(
         `🔄 Content unchanged: ${unchangedResults.length} URLs (skipping processing)`
       );
     }
     if (changedResults.length > 0) {
-      console.log(
+      this.logger.info(
         `📝 Content changed: ${changedResults.length} URLs (full processing)`
       );
     }
@@ -128,7 +155,10 @@ class AppleDocCollector {
           ? `${parsed.title}\n\n${parsed.content}`
           : parsed.content;
       } catch (error) {
-        console.warn("Failed to parse chunk JSON, using raw chunk:", error);
+        this.logger.warn("Failed to parse chunk JSON, using raw chunk", {
+          error: error instanceof Error ? error.message : String(error),
+          chunk: c.chunk.substring(0, 100) + "...",
+        });
         return c.chunk;
       }
     });
@@ -156,11 +186,11 @@ class AppleDocCollector {
       );
     }
 
-    return this.buildBatchResult(comparisonResults, processResults);
+    return this.buildBatchResult(comparisonResults, processResults, allChunks);
   }
 
   /**
-   * 智能内容比较：比较新旧 raw json 判断内容是否变化
+   * Intelligent content comparison: compare old and new raw json to determine content changes
    */
   private compareContentChanges(
     records: DatabaseRecord[],
@@ -181,8 +211,8 @@ class AppleDocCollector {
       const newRawJson = JSON.stringify(collectResult.data);
       const oldRawJson = record.raw_json;
 
-      // 深度内容比较
-      const hasChanged = this.isContentChanged(oldRawJson, newRawJson);
+      // Direct string comparison - most efficient and accurate
+      const hasChanged = oldRawJson !== newRawJson;
 
       return {
         record,
@@ -193,66 +223,17 @@ class AppleDocCollector {
     });
   }
 
-  /**
-   * 判断内容是否真正发生变化
-   */
-  private isContentChanged(
-    oldRawJson: string | null,
-    newRawJson: string
-  ): boolean {
-    if (!oldRawJson) return true; // 首次收集，认为有变化
-
-    try {
-      const oldData = JSON.parse(oldRawJson);
-      const newData = JSON.parse(newRawJson);
-
-      // 比较关键内容字段，忽略可能的时间戳等元数据变化
-      return (
-        !this.deepEqual(
-          oldData.primaryContentSections,
-          newData.primaryContentSections
-        ) ||
-        !this.deepEqual(oldData.metadata, newData.metadata) ||
-        !this.deepEqual(oldData.abstract, newData.abstract)
-      );
-    } catch {
-      return true; // JSON解析失败时认为有变化
-    }
-  }
-
-  /**
-   * 深度比较两个对象是否相等
-   */
-  private deepEqual(obj1: any, obj2: any): boolean {
-    if (obj1 === obj2) return true;
-    if (obj1 == null || obj2 == null) return obj1 === obj2;
-    if (typeof obj1 !== typeof obj2) return false;
-
-    if (Array.isArray(obj1)) {
-      if (!Array.isArray(obj2) || obj1.length !== obj2.length) return false;
-      return obj1.every((item, index) => this.deepEqual(item, obj2[index]));
-    }
-
-    if (typeof obj1 === "object") {
-      const keys1 = Object.keys(obj1);
-      const keys2 = Object.keys(obj2);
-      if (keys1.length !== keys2.length) return false;
-      return keys1.every((key) => this.deepEqual(obj1[key], obj2[key]));
-    }
-
-    return false;
-  }
-
   private buildBatchResult(
     comparisonResults: ContentComparisonResult[],
-    processResults: any[]
-  ): BatchResult {
+    processResults: any[],
+    allChunks: Array<{ url: string; chunk: string }>
+  ): ProcessBatchResult {
     const successRecords: DatabaseRecord[] = [];
     const failureRecords: DatabaseRecord[] = [];
     const deleteIds: string[] = [];
     const extractedUrls = new Set<string>();
 
-    let processIndex = 0; // 用于跟踪 processResults 的索引
+    let processIndex = 0; // Track processResults index
 
     for (const comparison of comparisonResults) {
       const { record, collectResult, hasChanged, error } = comparison;
@@ -260,7 +241,7 @@ class AppleDocCollector {
       if (collectResult?.error?.includes("PERMANENT_ERROR:")) {
         deleteIds.push(record.id);
       } else if (hasChanged && collectResult?.data) {
-        // 只有内容变化的记录才有对应的 processResult
+        // Only records with content changes have corresponding processResult
         const processResult = processResults[processIndex++];
 
         if (processResult?.data) {
@@ -294,7 +275,7 @@ class AppleDocCollector {
           failureRecords.push(failureRecord);
         }
       } else if (error) {
-        // 收集失败的记录
+        // Failed collection records
         const failureRecord: DatabaseRecord = {
           id: record.id,
           url: record.url,
@@ -307,10 +288,16 @@ class AppleDocCollector {
         };
         failureRecords.push(failureRecord);
       }
-      // 注意：内容未变化的记录已经在 processBatch 中通过 batchUpdateCollectCountOnly 处理
+      // Note: Records with unchanged content are already handled in processBatch via batchUpdateCollectCountOnly
     }
 
-    return { successRecords, failureRecords, deleteIds, extractedUrls };
+    return {
+      successRecords,
+      failureRecords,
+      deleteIds,
+      extractedUrls,
+      totalChunks: allChunks.length,
+    };
   }
 }
 

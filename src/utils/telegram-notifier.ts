@@ -1,5 +1,5 @@
 /**
- * Telegram Notifier - 简单的Telegram通知系统
+ * Telegram Notifier - Simple notification system
  */
 
 class TelegramNotifier {
@@ -31,14 +31,18 @@ class TelegramNotifier {
 
   private async send(text: string): Promise<void> {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
       await fetch(this.url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, parse_mode: "HTML" }),
+        signal: controller.signal,
       });
-    } catch (error) {
-      // 静默处理错误
-    }
+
+      clearTimeout(timeoutId);
+    } catch {}
   }
 
   isEnabled(): boolean {
@@ -53,7 +57,7 @@ class TelegramNotifier {
   }
 }
 
-// 创建全局实例
+// Global instance
 const telegramNotifier = new TelegramNotifier();
 
 export { TelegramNotifier, telegramNotifier };
