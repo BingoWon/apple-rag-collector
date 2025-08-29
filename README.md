@@ -301,22 +301,6 @@ The application automatically creates a `pages_stats` view for monitoring:
 SELECT * FROM pages_stats;
 ```
 
-**Log Output Examples**
-
-**INFO Level (Production-friendly core business processes):**
-```json
-{"timestamp":"2025-08-29T07:10:56.002Z","level":"INFO","message":"🚀 Batch #1: Processing 20 URLs"}
-{"timestamp":"2025-08-29T07:10:57.139Z","level":"INFO","message":"📝 Content changed: 20 URLs (full processing)"}
-{"timestamp":"2025-08-29T07:10:57.893Z","level":"INFO","message":"✅ Batch #1 completed in 1891ms: 7 chunks generated"}
-```
-
-**DEBUG Level (Technical implementation details):**
-```json
-{"timestamp":"2025-08-29T07:10:56.002Z","level":"DEBUG","message":"\n============================================================"}
-{"timestamp":"2025-08-29T07:10:57.682Z","level":"DEBUG","message":"🗑️ Deleted 4 existing chunks for 7 URLs"}
-{"timestamp":"2025-08-29T07:10:57.789Z","level":"DEBUG","message":"✅ Replaced chunks: 7 URLs, 7 new chunks"}
-```
-
 ## 🔄 Core Processing Logic
 
 ### 1. Automatic Database Initialization

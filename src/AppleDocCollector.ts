@@ -58,7 +58,7 @@ class AppleDocCollector {
     this.batchCounter++;
     const startTime = Date.now();
 
-    this.logger.debug(`\n${"=".repeat(60)}`);
+    this.logger.info(`\n${"=".repeat(30)}`);
     this.logger.info(
       `🚀 Batch #${this.batchCounter}: Processing ${records.length} URLs`
     );
