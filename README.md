@@ -205,6 +205,49 @@ pnpm run build
 pnpm run pm2:start
 ```
 
+## 🚀 Production Deployment
+
+### One-Click Deployment
+
+For production servers, use the automated deployment script:
+
+```bash
+# Make script executable (first time only)
+chmod +x deploy.sh
+
+# Deploy with one command
+./deploy.sh
+```
+
+The deployment script automatically:
+- ✅ Pulls latest changes from GitHub
+- ✅ Installs dependencies with frozen lockfile
+- ✅ Builds the project
+- ✅ Restarts PM2 service
+- ✅ Verifies deployment status
+- ✅ Shows recent logs
+
+### Manual Deployment
+
+If you prefer manual deployment:
+
+```bash
+# Pull latest changes
+git pull origin main
+
+# Install dependencies
+pnpm install --frozen-lockfile
+
+# Build project
+pnpm build
+
+# Restart PM2 service
+pnpm pm2:restart
+
+# Check status
+pm2 status apple-rag-collector
+```
+
 
 ## Telegram Bot Notifications
 
