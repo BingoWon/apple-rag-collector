@@ -110,7 +110,9 @@ class AppleDocCollector {
       const collectResult = collectResults[index];
 
       if (!collectResult.data) {
-        const isPermanent = BatchErrorHandler.isPermanentError(collectResult.error || '');
+        const isPermanent = BatchErrorHandler.isPermanentError(
+          collectResult.error || ""
+        );
         return {
           record,
           collectResult,
@@ -166,7 +168,8 @@ class AppleDocCollector {
       if (allChunks.length > 0) {
         const chunksWithEmbeddings = allChunks.map((item, index) => ({
           url: item.url,
-          content: item.chunk,
+          title: item.chunk.title,
+          content: item.chunk.content,
           embedding: embeddings[index] || [],
         }));
         await this.dbManager.insertChunks(chunksWithEmbeddings);
@@ -203,8 +206,12 @@ class AppleDocCollector {
     }
 
     // Separate permanent and temporary errors
-    const permanentErrorRecords = errorRecords.filter((r) => r.isPermanentError);
-    const temporaryErrorRecords = errorRecords.filter((r) => !r.isPermanentError);
+    const permanentErrorRecords = errorRecords.filter(
+      (r) => r.isPermanentError
+    );
+    const temporaryErrorRecords = errorRecords.filter(
+      (r) => !r.isPermanentError
+    );
 
     // Delete permanent error records (404, 403, 410)
     if (permanentErrorRecords.length > 0) {
@@ -215,7 +222,9 @@ class AppleDocCollector {
         `🗑️ Permanent errors: ${permanentErrorRecords.length} URLs (deleting records)\nDeleted URLs:\n${permanentUrls}`
       );
 
-      await this.dbManager.deleteRecords(permanentErrorRecords.map((r) => r.record.id));
+      await this.dbManager.deleteRecords(
+        permanentErrorRecords.map((r) => r.record.id)
+      );
     }
 
     // Update temporary error records (count only, preserve updated_at)
@@ -243,7 +252,10 @@ class AppleDocCollector {
   }
 
   private async generateChunksAndEmbeddings(processResults: any[]): Promise<{
-    allChunks: Array<{ url: string; chunk: string }>;
+    allChunks: Array<{
+      url: string;
+      chunk: { title: string | null; content: string };
+    }>;
     embeddings: number[][];
   }> {
     // Generate chunks using the chunker
@@ -266,18 +278,9 @@ class AppleDocCollector {
 
     // Generate embeddings
     const embeddingTexts = allChunks.map((c) => {
-      try {
-        const parsed = JSON.parse(c.chunk);
-        return parsed.title
-          ? `${parsed.title}\n\n${parsed.content}`
-          : parsed.content;
-      } catch (error) {
-        this.logger.warn("Failed to parse chunk JSON, using raw chunk", {
-          error: error instanceof Error ? error.message : String(error),
-          chunk: c.chunk.substring(0, 100) + "...",
-        });
-        return c.chunk;
-      }
+      return c.chunk.title
+        ? `${c.chunk.title}\n\n${c.chunk.content}`
+        : c.chunk.content;
     });
 
     const embeddings =
@@ -291,7 +294,10 @@ class AppleDocCollector {
   private buildProcessingResult(
     processingPlan: ProcessingPlanItem[],
     processResults: any[],
-    allChunks: Array<{ url: string; chunk: string }>
+    allChunks: Array<{
+      url: string;
+      chunk: { title: string | null; content: string };
+    }>
   ): ProcessBatchResult {
     const successRecords: DatabaseRecord[] = [];
     const failureRecords: DatabaseRecord[] = [];

@@ -11,7 +11,7 @@
  * - Dynamic Chunk Size: Recalculate chunk size before each split, adaptive to remaining content
  * - Smart Split Points: Find best semantic boundaries near target position by priority
  * - Quality Assurance: Auto-filter invalid chunks, ensure output quality
- * - Unified JSON Output: All chunks use consistent {"title", "content"} structure
+ * - Unified Object Output: All chunks use consistent {title, content} object structure
  *
  * 【Algorithm Flow】
  * 1. Accept title parameter from ContentProcessor (document metadata)
@@ -19,13 +19,13 @@
  * 3. Before each split: chunk_size = remaining_length ÷ remaining_chunks
  * 4. Find best split point near target position by priority
  * 5. Last chunk contains all remaining content with auto quality assurance
- * 6. Generate JSON chunks with title + content structure
+ * 6. Generate chunk objects with title + content structure
  *
- * 【JSON Output Format】
- * ```json
+ * 【Object Output Format】
+ * ```typescript
  * {
- *   "title": "Article: Xcode 26 Beta 7 Release Notes\nUpdate your apps...",
- *   "content": "## Overview\nXcode 26 beta 7 includes SDKs..."
+ *   title: "Article: Xcode 26 Beta 7 Release Notes\nUpdate your apps..." | null,
+ *   content: "## Overview\nXcode 26 beta 7 includes SDKs..."
  * }
  * ```
  *
@@ -65,8 +65,10 @@ export class Chunker {
       title: string | null;
       content: string;
     }>
-  ): BatchResult<string[]>[] {
-    const results: BatchResult<string[]>[] = [];
+  ): BatchResult<Array<{ title: string | null; content: string }>>[] {
+    const results: BatchResult<
+      Array<{ title: string | null; content: string }>
+    >[] = [];
 
     for (let i = 0; i < contentResults.length; i += this.config.batchSize) {
       const batch = contentResults.slice(i, i + this.config.batchSize);
@@ -81,7 +83,7 @@ export class Chunker {
     url: string;
     title: string | null;
     content: string;
-  }): BatchResult<string[]> {
+  }): BatchResult<Array<{ title: string | null; content: string }>> {
     try {
       // Use title as context for all chunks
       const chunks = this.chunkText(item.content, item.title || "");
@@ -94,7 +96,10 @@ export class Chunker {
   /**
    * Smart chunking main entry - Dynamic adaptive strategy
    */
-  chunkText(text: string, title: string = ""): string[] {
+  chunkText(
+    text: string,
+    title: string = ""
+  ): Array<{ title: string | null; content: string }> {
     if (!text.trim()) {
       return [];
     }
@@ -106,7 +111,10 @@ export class Chunker {
   /**
    * Dynamic adaptive splitting strategy - Combine dynamic calculation and smart split points
    */
-  private _adaptiveSplit(content: string, title: string): string[] {
+  private _adaptiveSplit(
+    content: string,
+    title: string
+  ): Array<{ title: string | null; content: string }> {
     // Use Math.round for target chunk count to achieve more balanced distribution
     // e.g., 4900 length → round(4900/2500) = 2 chunks instead of 1
     const targetChunkCount = Math.max(
@@ -114,7 +122,7 @@ export class Chunker {
       Math.round(content.length / Chunker.TARGET_CHUNK_SIZE)
     );
 
-    const chunks: string[] = [];
+    const chunks: Array<{ title: string | null; content: string }> = [];
     let start = 0;
 
     for (
@@ -173,16 +181,15 @@ export class Chunker {
   }
 
   /**
-   * Create JSON format chunk with title and content
+   * Create chunk object with title and content
    */
-  private _createChunkJson(title: string, content: string): string {
-    return JSON.stringify(
-      {
-        title: title,
-        content: content.trim(),
-      },
-      null,
-      2
-    );
+  private _createChunkJson(
+    title: string,
+    content: string
+  ): { title: string | null; content: string } {
+    return {
+      title: title || null,
+      content: content.trim(),
+    };
   }
 }

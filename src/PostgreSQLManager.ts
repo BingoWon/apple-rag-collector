@@ -43,6 +43,7 @@ class PostgreSQLManager {
         CREATE TABLE IF NOT EXISTS chunks (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           url TEXT NOT NULL,
+          title TEXT,
           content TEXT NOT NULL,
           created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
           embedding HALFVEC(2560)
@@ -413,6 +414,7 @@ class PostgreSQLManager {
   async insertChunks(
     chunks: Array<{
       url: string;
+      title: string | null;
       content: string;
       embedding: number[];
     }>
@@ -442,14 +444,16 @@ class PostgreSQLManager {
       let paramIndex = 1;
 
       for (const chunk of chunks) {
-        values.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2})`);
+        values.push(
+          `($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3})`
+        );
         const vectorString = `[${chunk.embedding.join(",")}]`;
-        params.push(chunk.url, chunk.content, vectorString);
-        paramIndex += 3;
+        params.push(chunk.url, chunk.title, chunk.content, vectorString);
+        paramIndex += 4;
       }
 
       const insertQuery = `
-        INSERT INTO chunks (url, content, embedding)
+        INSERT INTO chunks (url, title, content, embedding)
         VALUES ${values.join(", ")}
       `;
 
@@ -478,13 +482,14 @@ class PostgreSQLManager {
     const client = await this.pool.connect();
     try {
       const result = await client.query(
-        "SELECT id, url, content, created_at, embedding FROM chunks WHERE url = $1 ORDER BY created_at",
+        "SELECT id, url, title, content, created_at, embedding FROM chunks WHERE url = $1 ORDER BY created_at",
         [url]
       );
 
       return result.rows.map((row: any) => ({
         id: row.id,
         url: row.url,
+        title: row.title,
         content: row.content,
         created_at: row.created_at,
         // Convert HALFVEC back to number array

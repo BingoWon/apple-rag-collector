@@ -49,18 +49,20 @@ class Logger {
 
   async warn(message: string, data?: Record<string, unknown>): Promise<void> {
     if (this.shouldLog("warn")) {
-      console.warn(this.formatMessage(message, data));
+      const fullMessage = this.formatMessage(message, data);
+      console.warn(fullMessage);
       try {
-        await telegramNotifier.notifyWarning(message);
+        await telegramNotifier.notifyWarning(fullMessage);
       } catch {}
     }
   }
 
   async error(message: string, data?: Record<string, unknown>): Promise<void> {
     if (this.shouldLog("error")) {
-      console.error(this.formatMessage(message, data));
+      const fullMessage = this.formatMessage(message, data);
+      console.error(fullMessage);
       try {
-        await telegramNotifier.notifyError(new Error(message));
+        await telegramNotifier.notifyError(new Error(fullMessage));
       } catch {}
     }
   }

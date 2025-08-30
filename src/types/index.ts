@@ -50,6 +50,7 @@ interface DocumentContent {
 interface ChunkRecord {
   readonly id: string;
   readonly url: string;
+  readonly title: string | null;
   readonly content: string;
   readonly created_at: Date;
   readonly embedding: number[] | null;
