@@ -260,6 +260,7 @@ class PostgreSQLManager {
 
       return result.rows.map((row: any) => ({
         ...row,
+        collect_count: Number(row.collect_count), // Ensure collect_count is a number
         created_at: row.created_at,
         updated_at: row.updated_at,
       })) as DatabaseRecord[];
@@ -329,11 +330,15 @@ class PostgreSQLManager {
 
       // Build CASE WHEN statement for batch update
       const caseStatements = updates
-        .map((_, index) => `WHEN id = $${index * 2 + 1} THEN $${index * 2 + 2}`)
+        .map(
+          (_, index) =>
+            `WHEN id = $${index * 2 + 1} THEN $${index * 2 + 2}::integer`
+        )
         .join(" ");
 
       const ids = updates.map((u) => u.id);
-      const params = updates.flatMap((u) => [u.id, u.collect_count]);
+      // Ensure collect_count is always a number
+      const params = updates.flatMap((u) => [u.id, Number(u.collect_count)]);
 
       await client.query(
         `
@@ -345,8 +350,8 @@ class PostgreSQLManager {
       );
 
       await client.query("COMMIT");
-      this.logger.debug(
-        `📊 Updated collect_count for ${updates.length} unchanged records`
+      this.logger.info(
+        `📊 Updated collect_count for ${updates.length} records`
       );
     } catch (error) {
       await client.query("ROLLBACK");
@@ -426,7 +431,7 @@ class PostgreSQLManager {
           `DELETE FROM chunks WHERE url IN (${urlParams})`,
           urls
         );
-        this.logger.debug(
+        this.logger.info(
           `🗑️ Deleted ${deleteResult.rowCount || 0} existing chunks for ${urls.length} URLs`
         );
       }

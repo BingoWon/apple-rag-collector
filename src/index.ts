@@ -18,6 +18,7 @@ const appConfig: AppConfig = {
   },
   batchProcessing: {
     batchSize: parseInt(process.env["BATCH_SIZE"] || "25"),
+    forceUpdateAll: process.env["FORCE_UPDATE_ALL"] === "true",
   },
   logging: {
     level: process.env["LOG_LEVEL"] || "info",
@@ -54,6 +55,9 @@ async function main(): Promise<void> {
     version: "2.0.0",
     mode: "optimized-batch-processing",
     batchSize: appConfig.batchProcessing.batchSize,
+    updateMode: appConfig.batchProcessing.forceUpdateAll
+      ? "FORCE_UPDATE_ALL"
+      : "SMART_UPDATE",
     database: `${appConfig.database.host}:${appConfig.database.port}/${appConfig.database.database}`,
     telegram: telegramNotifier.getConfig(),
   });
@@ -147,15 +151,6 @@ async function main(): Promise<void> {
             "Consider increasing EMBEDDING_API_TIMEOUT or reducing BATCH_SIZE",
           stack: error instanceof Error ? error.stack : undefined,
         });
-
-        // Send specific timeout notification
-        if (telegramNotifier.isEnabled()) {
-          await telegramNotifier.notifyError(
-            new Error(
-              `⏰ API Timeout: ${errorMessage}. Timeout: ${process.env["EMBEDDING_API_TIMEOUT"] || "30"}s, Batch: ${appConfig.batchProcessing.batchSize}`
-            )
-          );
-        }
       } else {
         await logger.error("Batch processing failed", {
           error: errorMessage,

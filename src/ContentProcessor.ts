@@ -172,6 +172,8 @@ class ContentProcessor {
       declarations: () => this.renderDeclarations(section),
       properties: () => this.renderProperties(section, references),
       parameters: () => this.renderParameters(section, references),
+      aside: () => this.renderAside(section, references, indentLevel),
+      termList: () => this.renderTermList(section, references, indentLevel),
     };
 
     return (
@@ -527,6 +529,81 @@ class ContentProcessor {
     return propertyHeader;
   }
 
+  private renderAside(
+    section: any,
+    references: Record<string, any>,
+    indentLevel: number
+  ): { title: string; content: string } {
+    let content = "";
+
+    // Add the aside type as an inline emphasis (Important, Note, Warning, etc.)
+    let asideLabel = "";
+    if (section.name) {
+      asideLabel = section.name;
+    } else if (section.style) {
+      // Capitalize the first letter of the style
+      asideLabel =
+        section.style.charAt(0).toUpperCase() + section.style.slice(1);
+    }
+
+    // Process the aside content
+    if (section.content) {
+      section.content.forEach((contentItem: any, index: number) => {
+        const result = this.convertContentSectionToMarkdown(
+          contentItem,
+          references,
+          indentLevel
+        );
+        if (result.content) {
+          // Add the label before the first content item
+          if (index === 0 && asideLabel) {
+            content += `**${asideLabel}**: ${result.content}\n`;
+          } else {
+            content += result.content + "\n";
+          }
+        }
+      });
+    }
+
+    return { title: "", content };
+  }
+
+  private renderTermList(
+    section: any,
+    references: Record<string, any>,
+    _indentLevel: number
+  ): { title: string; content: string } {
+    let content = "";
+
+    if (section.items?.length) {
+      section.items.forEach((item: any) => {
+        // Render the term (parameter name) with 2 spaces (will get +2 from renderParameters = 4 total)
+        if (item.term?.inlineContent) {
+          const termContent = item.term.inlineContent
+            .map((inline: any) => this.renderInlineContent(inline, references))
+            .join("");
+          content += `  ${termContent}\n`;
+        }
+
+        // Render the definition (parameter description) with 4 spaces (will get +2 from renderParameters = 6 total)
+        if (item.definition?.content) {
+          item.definition.content.forEach((defItem: any) => {
+            const result = this.convertContentSectionToMarkdown(
+              defItem,
+              references,
+              0
+            );
+            if (result.content) {
+              content += `    ${result.content}\n`;
+            }
+          });
+        }
+      });
+    }
+
+    return { title: "", content };
+  }
+
   private renderGenericContent(
     section: any,
     references: Record<string, any>,
@@ -572,7 +649,14 @@ class ContentProcessor {
               0
             );
             if (result.content) {
-              content += `  ${result.content}\n`;
+              // Split content into lines and add 2-space indent to each line
+              const lines = result.content.split("\n");
+              lines.forEach((line) => {
+                if (line.trim()) {
+                  // Only add indent to non-empty lines
+                  content += `  ${line}\n`;
+                }
+              });
             }
           });
         }

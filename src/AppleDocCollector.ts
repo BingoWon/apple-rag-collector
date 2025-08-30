@@ -14,7 +14,7 @@ interface ProcessBatchResult {
   totalChunks: number;
 }
 
-interface ContentComparisonResult {
+interface ProcessingPlanItem {
   record: DatabaseRecord;
   collectResult: any;
   hasChanged: boolean;
@@ -61,11 +61,28 @@ class AppleDocCollector {
     );
 
     const result = await this.processBatch(records);
-    await this.dbManager.batchProcessRecords(
-      result.successRecords,
-      result.failureRecords,
-      result.deleteIds
-    );
+
+    // Only call batchProcessRecords if there are records that need database updates
+    // In Force Update mode, records are already updated via storeChunksAndUpdateRecords
+    if (
+      result.successRecords.length > 0 ||
+      result.failureRecords.length > 0 ||
+      result.deleteIds.length > 0
+    ) {
+      // Check if we need to update records in database
+      const needsDatabaseUpdate =
+        !this.config.forceUpdateAll ||
+        result.failureRecords.length > 0 ||
+        result.deleteIds.length > 0;
+
+      if (needsDatabaseUpdate) {
+        await this.dbManager.batchProcessRecords(
+          result.successRecords,
+          result.failureRecords,
+          result.deleteIds
+        );
+      }
+    }
 
     if (result.extractedUrls.size > 0) {
       await this.dbManager.batchInsertUrls([...result.extractedUrls]);
@@ -87,43 +104,94 @@ class AppleDocCollector {
     records: DatabaseRecord[]
   ): Promise<ProcessBatchResult> {
     const urls = records.map((r) => r.url);
-
-    // Stage 1: Batch Collecting
     const collectResults = await this.apiClient.fetchDocuments(urls);
 
-    // Stage 2: Intelligent Content Comparison
-    const comparisonResults = this.compareContentChanges(
-      records,
-      collectResults
-    );
+    // Determine processing strategy and create processing plan
+    const processingPlan = this.config.forceUpdateAll
+      ? this.createForceUpdatePlan(records, collectResults)
+      : this.compareContentChanges(records, collectResults);
 
-    // Separate changed and unchanged records
-    const changedResults = comparisonResults.filter((r) => r.hasChanged);
-    const unchangedResults = comparisonResults.filter(
+    return await this.executeProcessingPlan(processingPlan);
+  }
+
+  private createForceUpdatePlan(
+    records: DatabaseRecord[],
+    collectResults: any[]
+  ): ProcessingPlanItem[] {
+    this.logger.info(`🔄 Force Update: Processing all ${records.length} URLs`);
+
+    return records.map((record, index) => {
+      const collectResult = collectResults[index];
+      return {
+        record,
+        collectResult,
+        hasChanged: true, // Force all records to be treated as changed
+        newRawJson: collectResult?.data
+          ? JSON.stringify(collectResult.data)
+          : "",
+        error: collectResult?.error,
+      };
+    });
+  }
+
+  private async executeProcessingPlan(
+    processingPlan: ProcessingPlanItem[]
+  ): Promise<ProcessBatchResult> {
+    const changedRecords = processingPlan.filter(
+      (r) => r.hasChanged && !r.error
+    );
+    const unchangedRecords = processingPlan.filter(
       (r) => !r.hasChanged && !r.error
     );
 
-    // Log intelligent comparison results
-    if (unchangedResults.length > 0) {
-      this.logger.info(
-        `🔄 Content unchanged: ${unchangedResults.length} URLs (skipping processing)`
-      );
-    }
-    if (changedResults.length > 0) {
-      this.logger.info(
-        `📝 Content changed: ${changedResults.length} URLs (full processing)`
-      );
-    }
-
-    // Stage 3: Process Only Changed Content
+    // Process changed content
     const processResults =
-      changedResults.length > 0
+      changedRecords.length > 0
         ? await this.contentProcessor.processDocuments(
-            changedResults.map((r) => r.collectResult)
+            changedRecords.map((r) => r.collectResult)
           )
         : [];
 
-    // Stage 4: Chunk Only Changed Content
+    const { allChunks, embeddings } =
+      await this.generateChunksAndEmbeddings(processResults);
+
+    // Store changed chunks and update records
+    if (changedRecords.length > 0) {
+      this.logger.info(
+        `📝 Content changed: ${changedRecords.length} URLs (full processing)`
+      );
+      await this.storeChunksAndUpdateRecords(
+        allChunks,
+        embeddings,
+        changedRecords.map((r) => r.record)
+      );
+    }
+
+    // Update unchanged records (count only)
+    if (unchangedRecords.length > 0) {
+      this.logger.info(
+        `🔄 Content unchanged: ${unchangedRecords.length} URLs (skipping processing)`
+      );
+      await this.dbManager.batchUpdateCollectCountOnly(
+        unchangedRecords.map((r) => ({
+          id: r.record.id,
+          collect_count: Number(r.record.collect_count) + 1,
+        }))
+      );
+    }
+
+    return this.buildProcessingResult(
+      processingPlan,
+      processResults,
+      allChunks
+    );
+  }
+
+  private async generateChunksAndEmbeddings(processResults: any[]): Promise<{
+    allChunks: Array<{ url: string; chunk: string }>;
+    embeddings: number[][];
+  }> {
+    // Generate chunks using the chunker
     const chunkResults =
       processResults.length > 0
         ? this.chunker.chunkTexts(
@@ -137,16 +205,14 @@ class AppleDocCollector {
           )
         : [];
 
-    // Stage 5: Embed Only Changed Content
     const allChunks = chunkResults.flatMap((r) =>
       r.data ? r.data.map((chunk) => ({ url: r.url, chunk })) : []
     );
 
-    // Parse JSON chunks and combine title + content for embedding
+    // Generate embeddings
     const embeddingTexts = allChunks.map((c) => {
       try {
         const parsed = JSON.parse(c.chunk);
-        // Combine title and content for optimal semantic representation
         return parsed.title
           ? `${parsed.title}\n\n${parsed.content}`
           : parsed.content;
@@ -164,7 +230,15 @@ class AppleDocCollector {
         ? await createEmbeddings(embeddingTexts, this.logger)
         : [];
 
-    // Stage 6: Batch Storage for Changed Content
+    return { allChunks, embeddings };
+  }
+
+  private async storeChunksAndUpdateRecords(
+    allChunks: Array<{ url: string; chunk: string }>,
+    embeddings: number[][],
+    records: DatabaseRecord[]
+  ): Promise<void> {
+    // Store chunks with embeddings
     if (allChunks.length > 0) {
       const chunksWithEmbeddings = allChunks.map((item, index) => ({
         url: item.url,
@@ -174,26 +248,69 @@ class AppleDocCollector {
       await this.dbManager.insertChunks(chunksWithEmbeddings);
     }
 
-    // Stage 7: Lightweight Update for Unchanged Content
-    if (unchangedResults.length > 0) {
+    // Update collect_count for records
+    if (records.length > 0) {
       await this.dbManager.batchUpdateCollectCountOnly(
-        unchangedResults.map((r) => ({
-          id: r.record.id,
-          collect_count: r.record.collect_count + 1,
+        records.map((r) => ({
+          id: r.id,
+          collect_count: Number(r.collect_count) + 1,
         }))
       );
     }
+  }
 
-    return this.buildBatchResult(comparisonResults, processResults, allChunks);
+  private buildProcessingResult(
+    processingPlan: ProcessingPlanItem[],
+    processResults: any[],
+    allChunks: Array<{ url: string; chunk: string }>
+  ): ProcessBatchResult {
+    const successRecords: DatabaseRecord[] = [];
+    const failureRecords: DatabaseRecord[] = [];
+    const extractedUrls = new Set<string>();
+
+    let processIndex = 0;
+    for (const planItem of processingPlan) {
+      const { record, collectResult, hasChanged, error } = planItem;
+
+      if (error) {
+        failureRecords.push(record);
+        continue;
+      }
+
+      // All non-error records are successful (either changed or unchanged)
+      successRecords.push(record);
+
+      // Extract URLs only from changed records that were processed
+      if (
+        hasChanged &&
+        collectResult?.data &&
+        processIndex < processResults.length
+      ) {
+        const processResult = processResults[processIndex++];
+        if (processResult?.data?.urls) {
+          processResult.data.urls.forEach((url: string) =>
+            extractedUrls.add(url)
+          );
+        }
+      }
+    }
+
+    return {
+      successRecords,
+      failureRecords,
+      deleteIds: [], // No deletions in current implementation
+      extractedUrls,
+      totalChunks: allChunks.length,
+    };
   }
 
   /**
-   * Intelligent content comparison: compare old and new raw json to determine content changes
+   * Compare old and new raw JSON to determine content changes
    */
   private compareContentChanges(
     records: DatabaseRecord[],
     collectResults: any[]
-  ): ContentComparisonResult[] {
+  ): ProcessingPlanItem[] {
     return records.map((record, index) => {
       const collectResult = collectResults[index];
 
@@ -209,7 +326,7 @@ class AppleDocCollector {
       const newRawJson = JSON.stringify(collectResult.data);
       const oldRawJson = record.raw_json;
 
-      // Direct string comparison - most efficient and accurate
+      // Direct string comparison for content changes
       const hasChanged = oldRawJson !== newRawJson;
 
       return {
@@ -219,83 +336,6 @@ class AppleDocCollector {
         newRawJson,
       };
     });
-  }
-
-  private buildBatchResult(
-    comparisonResults: ContentComparisonResult[],
-    processResults: any[],
-    allChunks: Array<{ url: string; chunk: string }>
-  ): ProcessBatchResult {
-    const successRecords: DatabaseRecord[] = [];
-    const failureRecords: DatabaseRecord[] = [];
-    const deleteIds: string[] = [];
-    const extractedUrls = new Set<string>();
-
-    let processIndex = 0; // Track processResults index
-
-    for (const comparison of comparisonResults) {
-      const { record, collectResult, hasChanged, error } = comparison;
-
-      if (collectResult?.error?.includes("PERMANENT_ERROR:")) {
-        deleteIds.push(record.id);
-      } else if (hasChanged && collectResult?.data) {
-        // Only records with content changes have corresponding processResult
-        const processResult = processResults[processIndex++];
-
-        if (processResult?.data) {
-          const updatedRecord: DatabaseRecord = {
-            id: record.id,
-            url: record.url,
-            raw_json: comparison.newRawJson!,
-            title: processResult.data.title,
-            content: processResult.data.content,
-            collect_count: record.collect_count + 1,
-            created_at: record.created_at,
-            updated_at: new Date(),
-          };
-          successRecords.push(updatedRecord);
-
-          processResult.data.extractedUrls.forEach((url: string) =>
-            extractedUrls.add(url)
-          );
-        } else {
-          const errorMessage = processResult?.error || "Processing failed";
-          const failureRecord: DatabaseRecord = {
-            id: record.id,
-            url: record.url,
-            raw_json: null,
-            title: null,
-            content: `ERROR: ${errorMessage}`,
-            collect_count: record.collect_count + 1,
-            created_at: record.created_at,
-            updated_at: new Date(),
-          };
-          failureRecords.push(failureRecord);
-        }
-      } else if (error) {
-        // Failed collection records
-        const failureRecord: DatabaseRecord = {
-          id: record.id,
-          url: record.url,
-          raw_json: null,
-          title: null,
-          content: `ERROR: ${error}`,
-          collect_count: record.collect_count + 1,
-          created_at: record.created_at,
-          updated_at: new Date(),
-        };
-        failureRecords.push(failureRecord);
-      }
-      // Note: Records with unchanged content are already handled in processBatch via batchUpdateCollectCountOnly
-    }
-
-    return {
-      successRecords,
-      failureRecords,
-      deleteIds,
-      extractedUrls,
-      totalChunks: allChunks.length,
-    };
   }
 }
 

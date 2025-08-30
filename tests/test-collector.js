@@ -1,12 +1,17 @@
 // Apple Documentation Collector Test Script
 // This script tests the unified AppleDocProcessor implementation
 
-const fs = require("fs");
-const path = require("path");
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 // Import our unified processors
-const { AppleAPIClient } = require("../dist/AppleAPIClient");
-const { ContentProcessor } = require("../dist/ContentProcessor");
+import { AppleAPIClient } from "../dist/AppleAPIClient.js";
+import { ContentProcessor } from "../dist/ContentProcessor.js";
+
+// ES module equivalent of __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Configuration
 const OUTPUT_DIR = path.join(__dirname, "output");
@@ -16,7 +21,7 @@ const SESSION_DIR = path.join(OUTPUT_DIR, TIMESTAMP);
 
 // Test URL
 const TEST_URL =
-  "https://developer.apple.com/documentation/matter/mtrbaseclusterelectricalmeasurement/readattributermscurrentphasec(completionhandler:)";
+  "https://developer.apple.com/design/human-interface-guidelines/designing-for-ios";
 
 // Ensure output directory exists
 if (!fs.existsSync(OUTPUT_DIR)) {
@@ -121,29 +126,45 @@ async function processAppleDocument(url) {
     const apiClient = new AppleAPIClient();
     const contentProcessor = new ContentProcessor();
 
-    // Step 2: Fetch document data
+    // Step 2: Fetch document data (using batch API with single URL)
     logInfo("Fetching document data from Apple API");
-    const apiData = await apiClient.fetchDocumentJSON(url);
+    const apiResults = await apiClient.fetchDocuments([url]);
+    const apiResult = apiResults[0];
+
+    if (!apiResult.data) {
+      throw new ProcessingError(
+        "API_FETCH",
+        apiResult.error || "Failed to fetch document data"
+      );
+    }
 
     // Step 3: Validate API response
     logInfo("Validating API response");
-    validateApiResponse(apiData);
+    validateApiResponse(apiResult.data);
 
-    // Step 4: Process content
+    // Step 4: Process content (using batch API with single result)
     logInfo("Processing document content");
-    const processedContent = contentProcessor.processDocument(apiData);
+    const processResults = await contentProcessor.processDocuments([apiResult]);
+    const processResult = processResults[0];
+
+    if (!processResult.data) {
+      throw new ProcessingError(
+        "CONTENT_PROCESSING",
+        processResult.error || "Failed to process content"
+      );
+    }
 
     // Step 5: Validate processed content
     logInfo("Validating processed content");
-    validateProcessedContent(processedContent);
+    validateProcessedContent(processResult.data);
 
     logSuccess("Document processing completed");
 
     return {
       success: true,
       data: {
-        apiData,
-        processedContent,
+        apiData: apiResult.data,
+        processedContent: processResult.data,
       },
     };
   } catch (error) {
@@ -228,15 +249,15 @@ async function main() {
   }
 }
 
-// Run the test
-if (require.main === module) {
+// Run the test (ES module equivalent of require.main === module)
+if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((error) => {
     logError("Unhandled error in main execution", error);
     process.exit(1);
   });
 }
 
-module.exports = {
+export {
   processAppleDocument,
   validateApiResponse,
   validateProcessedContent,
