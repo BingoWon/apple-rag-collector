@@ -370,6 +370,42 @@ class PostgreSQLManager {
     }
   }
 
+  async deleteRecords(recordIds: string[]): Promise<void> {
+    if (recordIds.length === 0) return;
+
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      // Delete from chunks table first (foreign key constraint)
+      const chunksDeleteResult = await client.query(
+        `DELETE FROM chunks WHERE url IN (SELECT url FROM pages WHERE id = ANY($1))`,
+        [recordIds]
+      );
+
+      // Delete from pages table
+      const pagesDeleteResult = await client.query(
+        `DELETE FROM pages WHERE id = ANY($1)`,
+        [recordIds]
+      );
+
+      await client.query("COMMIT");
+
+      this.logger.info(
+        `🗑️ Deleted permanent error records: ${pagesDeleteResult.rowCount} pages, ${chunksDeleteResult.rowCount} chunks`
+      );
+    } catch (error) {
+      await client.query("ROLLBACK");
+      this.logger.error("Failed to delete permanent error records", {
+        error: error instanceof Error ? error.message : String(error),
+        recordIds: recordIds.length,
+      });
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   /**
    * Replace chunks with embeddings using atomic "delete-then-insert" strategy
    * Ensures each URL only has the latest chunks, preventing data accumulation
