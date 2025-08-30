@@ -201,7 +201,9 @@ class PostgreSQLManager {
         client.query(
           `SELECT COUNT(*) as count FROM pages ${appleUrlFilter} AND collect_count > 0`
         ),
-        client.query(`SELECT AVG(collect_count) as avg FROM pages ${appleUrlFilter}`),
+        client.query(
+          `SELECT AVG(collect_count) as avg FROM pages ${appleUrlFilter}`
+        ),
         client.query(
           `SELECT MIN(collect_count) as min, MAX(collect_count) as max FROM pages ${appleUrlFilter}`
         ),
@@ -271,8 +273,6 @@ class PostgreSQLManager {
       client.release();
     }
   }
-
-
 
   /**
    * Lightweight batch update: only update collect_count, keep other fields unchanged
@@ -353,9 +353,7 @@ class PostgreSQLManager {
       }
 
       await client.query("COMMIT");
-      this.logger.info(
-        `📝 Updated full records: ${records.length} records`
-      );
+      this.logger.info(`📝 Updated full records: ${records.length} records`);
     } catch (error) {
       await client.query("ROLLBACK");
       this.logger.error("Failed to update full records", {
@@ -367,8 +365,6 @@ class PostgreSQLManager {
       client.release();
     }
   }
-
-
 
   /**
    * Replace chunks with embeddings using atomic "delete-then-insert" strategy
