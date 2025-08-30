@@ -21,7 +21,7 @@ const SESSION_DIR = path.join(OUTPUT_DIR, TIMESTAMP);
 
 // Test URL
 const TEST_URL =
-  "https://developer.apple.com/design/human-interface-guidelines/designing-for-ios";
+  "https://www.swift.org/documentation/docc/";
 
 // Ensure output directory exists
 if (!fs.existsSync(OUTPUT_DIR)) {

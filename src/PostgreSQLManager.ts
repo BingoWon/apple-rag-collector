@@ -186,6 +186,9 @@ class PostgreSQLManager {
   async getStats(): Promise<DatabaseStats> {
     const client = await this.pool.connect();
     try {
+      // Only count Apple Developer URLs
+      const appleUrlFilter = "WHERE url LIKE 'https://developer.apple.com/%'";
+
       const [
         totalResult,
         collectedResult,
@@ -194,18 +197,18 @@ class PostgreSQLManager {
         distributionResult,
         chunksResult,
       ] = await Promise.all([
-        client.query("SELECT COUNT(*) as count FROM pages"),
+        client.query(`SELECT COUNT(*) as count FROM pages ${appleUrlFilter}`),
         client.query(
-          "SELECT COUNT(*) as count FROM pages WHERE collect_count > 0"
+          `SELECT COUNT(*) as count FROM pages ${appleUrlFilter} AND collect_count > 0`
         ),
-        client.query("SELECT AVG(collect_count) as avg FROM pages"),
+        client.query(`SELECT AVG(collect_count) as avg FROM pages ${appleUrlFilter}`),
         client.query(
-          "SELECT MIN(collect_count) as min, MAX(collect_count) as max FROM pages"
+          `SELECT MIN(collect_count) as min, MAX(collect_count) as max FROM pages ${appleUrlFilter}`
         ),
         client.query(
-          "SELECT collect_count, COUNT(*) as count FROM pages GROUP BY collect_count ORDER BY collect_count"
+          `SELECT collect_count, COUNT(*) as count FROM pages ${appleUrlFilter} GROUP BY collect_count ORDER BY collect_count`
         ),
-        client.query("SELECT COUNT(*) as count FROM chunks"),
+        client.query(`SELECT COUNT(*) as count FROM chunks ${appleUrlFilter}`),
       ]);
 
       const total = parseInt(totalResult.rows[0]?.count || "0");
