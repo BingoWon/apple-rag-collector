@@ -2,9 +2,6 @@ import { type AppleAPIResponse, type BatchResult } from "./types/index.js";
 import { BatchErrorHandler } from "./utils/batch-error-handler.js";
 
 class AppleAPIClient {
-  private static readonly JSON_API_BASE =
-    "https://developer.apple.com/tutorials/data" as const;
-
   async fetchDocuments(
     urls: string[]
   ): Promise<BatchResult<AppleAPIResponse>[]> {
@@ -57,7 +54,14 @@ class AppleAPIClient {
       if (path.endsWith("/")) {
         path = path.slice(0, -1);
       }
-      return `${AppleAPIClient.JSON_API_BASE}${path}.json`;
+
+      // DocC special handling: use Swift.org API endpoint
+      if (url.startsWith("https://developer.apple.com/documentation/docc")) {
+        return `https://www.swift.org/data/documentation${path}.json`;
+      }
+
+      // Default handling: use Apple's tutorials API
+      return `https://developer.apple.com/tutorials/data${path}.json`;
     } catch (error) {
       throw new Error(
         `Invalid URL: ${error instanceof Error ? error.message : "Unknown error"}`

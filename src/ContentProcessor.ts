@@ -4,9 +4,10 @@ import {
   type BatchResult,
 } from "./types/index.js";
 import { BatchErrorHandler } from "./utils/batch-error-handler.js";
+import { UrlProcessor } from "./utils/url-processor.js";
 
 class ContentProcessor {
-  private static readonly BASE_URL = "https://developer.apple.com" as const;
+  private urlProcessor = new UrlProcessor();
 
   async processDocuments(
     apiResults: BatchResult<AppleAPIResponse>[]
@@ -29,7 +30,7 @@ class ContentProcessor {
 
     return BatchErrorHandler.safeExecute(item.url, () => {
       const { titles, content } = this.cleanAndSeparateContent(item.data!);
-      const extractedUrls = this.extractAllUrls(item.data!);
+      const extractedUrls = this.urlProcessor.extractAllUrls(item.data!);
 
       const documentContent: DocumentContent = {
         title: titles.trim() || null,
@@ -321,76 +322,6 @@ class ContentProcessor {
       .join("");
 
     return abstractText ? `[${mediaType}: ${abstractText}]` : "";
-  }
-
-  private extractAllUrls(docData: AppleAPIResponse): string[] {
-    if (!docData.references) return [];
-
-    const rawUrls = Object.values(docData.references)
-      .filter((ref) => ref?.url)
-      .map((ref) =>
-        ref.url!.startsWith("http")
-          ? ref.url!
-          : `${ContentProcessor.BASE_URL}${ref.url}`
-      )
-      .filter(
-        (url) =>
-          url.startsWith("https://developer.apple.com/documentation") ||
-          url.startsWith("https://developer.apple.com/design")
-      );
-
-    // Apply URL processing pipeline: filter malformed → normalize → deduplicate
-    const filteredUrls = this.filterMalformedUrls(rawUrls);
-    const normalizedUrls = this.cleanAndNormalizeUrlsBatch(filteredUrls);
-
-    return [...new Set(normalizedUrls)];
-  }
-
-  /**
-   * Batch clean and normalize URLs - elegant, modern, and concise
-   */
-  private cleanAndNormalizeUrlsBatch(urls: string[]): string[] {
-    const normalizeUrl = (url: string): string => {
-      try {
-        const parsed = new URL(url);
-        // Preserve case sensitivity for Apple Developer paths
-        const normalizedPath = parsed.pathname === '/'
-          ? '/'
-          : parsed.pathname.replace(/\/+$/, ''); // Remove trailing slashes except root
-
-        return `${parsed.protocol.toLowerCase()}//${parsed.hostname.toLowerCase()}${normalizedPath}`;
-      } catch (error) {
-        // Return original URL if parsing fails
-        return url;
-      }
-    };
-
-    return urls.map(normalizeUrl);
-  }
-
-  /**
-   * Filter malformed URLs - global optimal solution
-   */
-  private filterMalformedUrls(urls: string[]): string[] {
-    const isValidUrl = (url: string): boolean => {
-      return !([
-        url.split('https://').length > 2 || url.split('http://').length > 2, // Duplicate protocol
-        url.includes('%ef%bb%bf') || url.includes('\ufeff'),                // BOM characters
-        url.split('/documentation/').length > 2,                            // Path duplication
-        url.includes('https:/') && !url.startsWith('https://'),            // Protocol format error
-        url.length > 200,                                                   // Abnormal length
-        url.split('developer.apple.com').length > 2                        // Duplicate domain
-      ].some(Boolean));
-    };
-
-    const validUrls = urls.filter(isValidUrl);
-    const filteredCount = urls.length - validUrls.length;
-
-    if (filteredCount > 0) {
-      console.info(`Filtered ${filteredCount} malformed URLs from ${urls.length} total`);
-    }
-
-    return validUrls;
   }
 
   private renderTableRow(

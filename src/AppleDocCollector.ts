@@ -99,7 +99,9 @@ class AppleDocCollector {
     collectResults: any[]
   ): ProcessingPlanItem[] {
     if (this.config.forceUpdateAll) {
-      this.logger.info(`🔄 Force Update: Processing all ${records.length} URLs`);
+      this.logger.info(
+        `🔄 Force Update: Processing all ${records.length} URLs`
+      );
     }
 
     return records.map((record, index) => {
@@ -118,7 +120,8 @@ class AppleDocCollector {
       const oldRawJson = record.raw_json;
 
       // Unified logic: Force Update overrides comparison, otherwise compare JSON
-      const hasChanged = this.config.forceUpdateAll || (oldRawJson !== newRawJson);
+      const hasChanged =
+        this.config.forceUpdateAll || oldRawJson !== newRawJson;
 
       return {
         record,
@@ -172,8 +175,12 @@ class AppleDocCollector {
           collect_count: Number(r.record.collect_count) + 1,
           updated_at: new Date(),
           raw_json: r.newRawJson || JSON.stringify(r.collectResult.data),
-          title: r.collectResult.data?.metadata?.title || r.collectResult.data?.title || null,
-          content: r.collectResult.data?.content || r.collectResult.data?.text || null,
+          title:
+            r.collectResult.data?.metadata?.title ||
+            r.collectResult.data?.title ||
+            null,
+          content:
+            r.collectResult.data?.content || r.collectResult.data?.text || null,
         }))
       );
     }
@@ -193,7 +200,9 @@ class AppleDocCollector {
 
     // Update error records (count only, preserve updated_at)
     if (errorRecords.length > 0) {
-      const failedUrls = errorRecords.map((r) => `${r.record.url} (${r.error})`).join('\n');
+      const failedUrls = errorRecords
+        .map((r) => `${r.record.url} (${r.error})`)
+        .join("\n");
       this.logger.error(
         `❌ Fetch failed: ${errorRecords.length} URLs (updating count only)\nFailed URLs:\n${failedUrls}`
       );
