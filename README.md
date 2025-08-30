@@ -200,7 +200,8 @@ Stores chunked content with half-precision vector embeddings for similarity sear
 CREATE TABLE chunks (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   url        TEXT NOT NULL,                     -- Source document URL
-  content    TEXT NOT NULL,                     -- Chunked content (JSON format)
+  title      TEXT,                              -- Document title
+  content    TEXT NOT NULL,                     -- Chunked content (plain text)
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
   embedding  HALFVEC(2560)                      -- Half-precision 2560-dim vectors
 );
