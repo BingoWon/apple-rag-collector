@@ -56,17 +56,17 @@ if [ ! -f "dist/index.js" ]; then
     exit 1
 fi
 
-# 5. Stop existing PM2 process (if running)
+# 5. Update PM2 to latest version
+echo "🔄 Updating PM2 to latest version..."
+pm2 update
+
+# 6. Stop existing PM2 process (if running)
 echo "🛑 Stopping existing PM2 process..."
 pm2 stop apple-rag-collector 2>/dev/null || echo "No existing process to stop"
 
-# 6. Start/Restart PM2 service
+# 7. Start/Restart PM2 service (displays status automatically)
 echo "🔄 Starting PM2 service..."
 pnpm pm2:start
-
-# 7. Verify service status
-echo "🔍 Checking service status..."
-pm2 status apple-rag-collector
 
 echo ""
 echo "✅ Deployment completed successfully!"

@@ -5,6 +5,7 @@ import { createEmbeddings } from "./EmbeddingProvider.js";
 import { PostgreSQLManager } from "./PostgreSQLManager.js";
 import { type DatabaseRecord, type BatchConfig } from "./types/index.js";
 import { Logger } from "./utils/logger.js";
+import { BatchErrorHandler } from "./utils/batch-error-handler.js";
 
 interface ProcessBatchResult {
   successRecords: DatabaseRecord[];
@@ -20,6 +21,7 @@ interface ProcessingPlanItem {
   hasChanged: boolean;
   newRawJson?: string;
   error?: string;
+  isPermanentError?: boolean;
 }
 
 class AppleDocCollector {
@@ -108,11 +110,13 @@ class AppleDocCollector {
       const collectResult = collectResults[index];
 
       if (!collectResult.data) {
+        const isPermanent = BatchErrorHandler.isPermanentError(collectResult.error || '');
         return {
           record,
           collectResult,
           hasChanged: false,
           error: collectResult.error,
+          isPermanentError: isPermanent,
         };
       }
 
@@ -198,17 +202,33 @@ class AppleDocCollector {
       );
     }
 
-    // Update error records (count only, preserve updated_at)
-    if (errorRecords.length > 0) {
-      const failedUrls = errorRecords
+    // Separate permanent and temporary errors
+    const permanentErrorRecords = errorRecords.filter((r) => r.isPermanentError);
+    const temporaryErrorRecords = errorRecords.filter((r) => !r.isPermanentError);
+
+    // Delete permanent error records (404, 403, 410)
+    if (permanentErrorRecords.length > 0) {
+      const permanentUrls = permanentErrorRecords
         .map((r) => `${r.record.url} (${r.error})`)
         .join("\n");
       this.logger.error(
-        `❌ Fetch failed: ${errorRecords.length} URLs (updating count only)\nFailed URLs:\n${failedUrls}`
+        `🗑️ Permanent errors: ${permanentErrorRecords.length} URLs (deleting records)\nDeleted URLs:\n${permanentUrls}`
+      );
+
+      await this.dbManager.deleteRecords(permanentErrorRecords.map((r) => r.record.id));
+    }
+
+    // Update temporary error records (count only, preserve updated_at)
+    if (temporaryErrorRecords.length > 0) {
+      const temporaryUrls = temporaryErrorRecords
+        .map((r) => `${r.record.url} (${r.error})`)
+        .join("\n");
+      this.logger.error(
+        `⏳ Temporary errors: ${temporaryErrorRecords.length} URLs (updating count only)\nFailed URLs:\n${temporaryUrls}`
       );
 
       await this.dbManager.batchUpdateCollectCountOnly(
-        errorRecords.map((r) => ({
+        temporaryErrorRecords.map((r) => ({
           id: r.record.id,
           collect_count: Number(r.record.collect_count) + 1,
         }))
