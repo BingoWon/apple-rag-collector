@@ -62,27 +62,9 @@ class AppleDocCollector {
 
     const result = await this.processBatch(records);
 
-    // Only call batchProcessRecords if there are records that need database updates
-    // In Force Update mode, records are already updated via storeChunksAndUpdateRecords
-    if (
-      result.successRecords.length > 0 ||
-      result.failureRecords.length > 0 ||
-      result.deleteIds.length > 0
-    ) {
-      // Check if we need to update records in database
-      const needsDatabaseUpdate =
-        !this.config.forceUpdateAll ||
-        result.failureRecords.length > 0 ||
-        result.deleteIds.length > 0;
-
-      if (needsDatabaseUpdate) {
-        await this.dbManager.batchProcessRecords(
-          result.successRecords,
-          result.failureRecords,
-          result.deleteIds
-        );
-      }
-    }
+    // Records are updated via intelligent field update strategy:
+    // - Changed records: full update via batchUpdateFullRecords (including updated_at)
+    // - Unchanged/Error records: count-only update via batchUpdateCollectCountOnly
 
     if (result.extractedUrls.size > 0) {
       await this.dbManager.batchInsertUrls([...result.extractedUrls]);
@@ -106,30 +88,43 @@ class AppleDocCollector {
     const urls = records.map((r) => r.url);
     const collectResults = await this.apiClient.fetchDocuments(urls);
 
-    // Determine processing strategy and create processing plan
-    const processingPlan = this.config.forceUpdateAll
-      ? this.createForceUpdatePlan(records, collectResults)
-      : this.compareContentChanges(records, collectResults);
+    // Unified processing plan creation
+    const processingPlan = this.createProcessingPlan(records, collectResults);
 
     return await this.executeProcessingPlan(processingPlan);
   }
 
-  private createForceUpdatePlan(
+  private createProcessingPlan(
     records: DatabaseRecord[],
     collectResults: any[]
   ): ProcessingPlanItem[] {
-    this.logger.info(`🔄 Force Update: Processing all ${records.length} URLs`);
+    if (this.config.forceUpdateAll) {
+      this.logger.info(`🔄 Force Update: Processing all ${records.length} URLs`);
+    }
 
     return records.map((record, index) => {
       const collectResult = collectResults[index];
+
+      if (!collectResult.data) {
+        return {
+          record,
+          collectResult,
+          hasChanged: false,
+          error: collectResult.error,
+        };
+      }
+
+      const newRawJson = JSON.stringify(collectResult.data);
+      const oldRawJson = record.raw_json;
+
+      // Unified logic: Force Update overrides comparison, otherwise compare JSON
+      const hasChanged = this.config.forceUpdateAll || (oldRawJson !== newRawJson);
+
       return {
         record,
         collectResult,
-        hasChanged: true, // Force all records to be treated as changed
-        newRawJson: collectResult?.data
-          ? JSON.stringify(collectResult.data)
-          : "",
-        error: collectResult?.error,
+        hasChanged,
+        newRawJson,
       };
     });
   }
@@ -143,6 +138,7 @@ class AppleDocCollector {
     const unchangedRecords = processingPlan.filter(
       (r) => !r.hasChanged && !r.error
     );
+    const errorRecords = processingPlan.filter((r) => r.error);
 
     // Process changed content
     const processResults =
@@ -155,25 +151,55 @@ class AppleDocCollector {
     const { allChunks, embeddings } =
       await this.generateChunksAndEmbeddings(processResults);
 
-    // Store changed chunks and update records
+    // Store changed chunks and update records with full content
     if (changedRecords.length > 0) {
       this.logger.info(
         `📝 Content changed: ${changedRecords.length} URLs (full processing)`
       );
-      await this.storeChunksAndUpdateRecords(
-        allChunks,
-        embeddings,
-        changedRecords.map((r) => r.record)
+      if (allChunks.length > 0) {
+        const chunksWithEmbeddings = allChunks.map((item, index) => ({
+          url: item.url,
+          content: item.chunk,
+          embedding: embeddings[index] || [],
+        }));
+        await this.dbManager.insertChunks(chunksWithEmbeddings);
+      }
+
+      // Update changed records with full content and updated_at
+      await this.dbManager.batchUpdateFullRecords(
+        changedRecords.map((r) => ({
+          ...r.record,
+          collect_count: Number(r.record.collect_count) + 1,
+          updated_at: new Date(),
+          raw_json: r.newRawJson || JSON.stringify(r.collectResult.data),
+          title: r.collectResult.data?.metadata?.title || r.collectResult.data?.title || null,
+          content: r.collectResult.data?.content || r.collectResult.data?.text || null,
+        }))
       );
     }
 
-    // Update unchanged records (count only)
+    // Update unchanged records (count only, preserve updated_at)
     if (unchangedRecords.length > 0) {
       this.logger.info(
-        `🔄 Content unchanged: ${unchangedRecords.length} URLs (skipping processing)`
+        `🔄 Content unchanged: ${unchangedRecords.length} URLs (updating count only)`
       );
       await this.dbManager.batchUpdateCollectCountOnly(
         unchangedRecords.map((r) => ({
+          id: r.record.id,
+          collect_count: Number(r.record.collect_count) + 1,
+        }))
+      );
+    }
+
+    // Update error records (count only, preserve updated_at)
+    if (errorRecords.length > 0) {
+      const failedUrls = errorRecords.map((r) => `${r.record.url} (${r.error})`).join('\n');
+      this.logger.error(
+        `❌ Fetch failed: ${errorRecords.length} URLs (updating count only)\nFailed URLs:\n${failedUrls}`
+      );
+
+      await this.dbManager.batchUpdateCollectCountOnly(
+        errorRecords.map((r) => ({
           id: r.record.id,
           collect_count: Number(r.record.collect_count) + 1,
         }))
@@ -233,32 +259,6 @@ class AppleDocCollector {
     return { allChunks, embeddings };
   }
 
-  private async storeChunksAndUpdateRecords(
-    allChunks: Array<{ url: string; chunk: string }>,
-    embeddings: number[][],
-    records: DatabaseRecord[]
-  ): Promise<void> {
-    // Store chunks with embeddings
-    if (allChunks.length > 0) {
-      const chunksWithEmbeddings = allChunks.map((item, index) => ({
-        url: item.url,
-        content: item.chunk,
-        embedding: embeddings[index] || [],
-      }));
-      await this.dbManager.insertChunks(chunksWithEmbeddings);
-    }
-
-    // Update collect_count for records
-    if (records.length > 0) {
-      await this.dbManager.batchUpdateCollectCountOnly(
-        records.map((r) => ({
-          id: r.id,
-          collect_count: Number(r.collect_count) + 1,
-        }))
-      );
-    }
-  }
-
   private buildProcessingResult(
     processingPlan: ProcessingPlanItem[],
     processResults: any[],
@@ -273,11 +273,12 @@ class AppleDocCollector {
       const { record, collectResult, hasChanged, error } = planItem;
 
       if (error) {
+        // Error records updated via batchUpdateCollectCountOnly, return original for result tracking
         failureRecords.push(record);
         continue;
       }
 
-      // All non-error records are successful (either changed or unchanged)
+      // Success records updated via appropriate method, return original for result tracking
       successRecords.push(record);
 
       // Extract URLs only from changed records that were processed
@@ -302,40 +303,6 @@ class AppleDocCollector {
       extractedUrls,
       totalChunks: allChunks.length,
     };
-  }
-
-  /**
-   * Compare old and new raw JSON to determine content changes
-   */
-  private compareContentChanges(
-    records: DatabaseRecord[],
-    collectResults: any[]
-  ): ProcessingPlanItem[] {
-    return records.map((record, index) => {
-      const collectResult = collectResults[index];
-
-      if (!collectResult.data) {
-        return {
-          record,
-          collectResult,
-          hasChanged: false,
-          error: collectResult.error,
-        };
-      }
-
-      const newRawJson = JSON.stringify(collectResult.data);
-      const oldRawJson = record.raw_json;
-
-      // Direct string comparison for content changes
-      const hasChanged = oldRawJson !== newRawJson;
-
-      return {
-        record,
-        collectResult,
-        hasChanged,
-        newRawJson,
-      };
-    });
   }
 }
 
