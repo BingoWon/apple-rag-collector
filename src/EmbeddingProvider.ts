@@ -93,25 +93,28 @@ export class BatchEmbeddingProvider {
 
             // Enhanced error logging with specific handling
             if (this.isTimeoutError(error as Error)) {
-              this.logger.warn(
-                `⏰ Embedding API timeout (${this.config.timeout}ms) - Batch size: ${texts.length} texts`,
-                {
-                  timeout: this.config.timeout,
-                  batchSize: texts.length,
-                  retry: retry + 1,
-                  keyAttempt: keyAttempt + 1,
-                  error: errorMessage,
-                }
-              );
+              // Only log timeout warning on final retry attempt
+              if (retry === 2) {
+                this.logger.warn(
+                  `⏰ Embedding API timeout (${this.config.timeout}ms) - Final attempt failed - Batch size: ${texts.length} texts`,
+                  {
+                    timeout: this.config.timeout,
+                    batchSize: texts.length,
+                    totalRetries: retry + 1,
+                    keyAttempt: keyAttempt + 1,
+                    error: errorMessage,
+                  }
+                );
+              }
             } else if (this.isApiKeyError(error as Error)) {
-              this.logger.warn(`🔑 API key error - Removing invalid key`, {
+              this.logger.info(`🔑 API key error - Removing invalid key`, {
                 error: errorMessage,
                 keyAttempt: keyAttempt + 1,
               });
               await this.keyManager.removeKey(apiKey);
               break; // Try next key
             } else if (this.isRateLimitError(error as Error)) {
-              this.logger.warn(
+              this.logger.info(
                 `🚦 Rate limit exceeded - Switching to next key`,
                 {
                   error: errorMessage,
@@ -139,9 +142,12 @@ export class BatchEmbeddingProvider {
               break; // Try next key
             }
 
-            // Server error - retry with same key
-            if (retry < 2 && this.isRetryableError(error as Error)) {
-              await this.sleep(1000 * (retry + 1));
+            // Server error or timeout - retry with same key
+            if (
+              retry < 2 &&
+              (this.isRetryableError(error as Error) ||
+                this.isTimeoutError(error as Error))
+            ) {
               continue;
             }
 
@@ -226,10 +232,6 @@ export class BatchEmbeddingProvider {
     return (
       msg.includes("503") || msg.includes("504") || msg.includes("timeout")
     );
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   get embeddingDim(): number {
