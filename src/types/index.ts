@@ -8,6 +8,7 @@
 // Batch processing configuration interface
 interface BatchConfig {
   readonly batchSize: number;
+  readonly forceUpdateAll: boolean;
 }
 
 // Application configuration interface

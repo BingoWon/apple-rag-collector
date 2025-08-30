@@ -582,6 +582,7 @@ DB_SSL=false
 # Application Settings
 LOG_LEVEL=info
 BATCH_SIZE=25  # Database record retrieval batch size
+FORCE_UPDATE_ALL=false  # Set to true to always update all records regardless of content changes
 
 # Database Connection
 DB_HOST=localhost
@@ -736,6 +737,7 @@ The system uses **dual-path processing** for maximum efficiency:
 - **🎯 Priority Processing**: Always processes records with lowest collect_count first
 - **📈 Incremental Updates**: Each processing increments collect_count and updated_at
 - **🔄 Cycling Logic**: When all records processed, starts over with lowest collect_count
+
 
 ## 🔧 Troubleshooting
 
