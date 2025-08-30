@@ -257,7 +257,11 @@ class PostgreSQLManager {
         `
         SELECT * FROM pages
         WHERE url LIKE 'https://developer.apple.com/%'
-        ORDER BY collect_count ASC, url ASC
+        ORDER BY
+          collect_count ASC,
+          CASE WHEN content IS NULL OR content = '' THEN 0 ELSE 1 END ASC,
+          CASE WHEN title IS NULL OR title = '' THEN 0 ELSE 1 END ASC,
+          url ASC
         LIMIT $1
       `,
         [batchSize]
