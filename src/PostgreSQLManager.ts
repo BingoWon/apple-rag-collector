@@ -269,52 +269,7 @@ class PostgreSQLManager {
     }
   }
 
-  /**
-   * 原子批处理：先删除，再插入成功和失败记录
-   * 解决删除后被重新插入的问题
-   */
-  async batchProcessRecords(
-    successRecords: DatabaseRecord[],
-    failureRecords: DatabaseRecord[],
-    deleteIds: string[]
-  ): Promise<void> {
-    if (
-      successRecords.length === 0 &&
-      failureRecords.length === 0 &&
-      deleteIds.length === 0
-    ) {
-      return;
-    }
 
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-
-      // 1. Delete records that need to be deleted first
-      if (deleteIds.length > 0) {
-        const deleteParams = deleteIds
-          .map((_, index) => `$${index + 1}`)
-          .join(", ");
-        await client.query(
-          `DELETE FROM pages WHERE id IN (${deleteParams})`,
-          deleteIds
-        );
-      }
-
-      // 2. Batch insert success and failure records
-      const allRecords = [...successRecords, ...failureRecords];
-      if (allRecords.length > 0) {
-        await this.batchInsertRecordsInTransaction(client, allRecords);
-      }
-
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
 
   /**
    * Lightweight batch update: only update collect_count, keep other fields unchanged
@@ -365,46 +320,52 @@ class PostgreSQLManager {
     }
   }
 
-  /**
-   * Batch insert records within existing transaction
-   *
-   * This method is specifically for complex transaction scenarios, such as delete+insert operations in batchProcessRecords.
-   * Does not manage database connections and transactions, caller is responsible for transaction begin, commit and rollback.
-   *
-   * @param client - Connected database client (must already be in transaction)
-   * @param records - Array of database records to insert
-   */
-  private async batchInsertRecordsInTransaction(
-    client: any,
-    records: DatabaseRecord[]
-  ): Promise<void> {
-    for (const record of records) {
-      await client.query(
-        `
-        INSERT INTO pages
-        (id, url, raw_json, title, content, collect_count, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        ON CONFLICT (url)
-        DO UPDATE SET
-          raw_json = EXCLUDED.raw_json,
-          title = EXCLUDED.title,
-          content = EXCLUDED.content,
-          collect_count = EXCLUDED.collect_count,
-          updated_at = EXCLUDED.updated_at
-      `,
-        [
-          record.id,
-          record.url,
-          record.raw_json,
-          record.title,
-          record.content,
-          record.collect_count,
-          record.created_at,
-          record.updated_at,
-        ]
+  async batchUpdateFullRecords(records: DatabaseRecord[]): Promise<void> {
+    if (records.length === 0) return;
+
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      for (const record of records) {
+        await client.query(
+          `
+          UPDATE pages
+          SET raw_json = $2,
+              title = $3,
+              content = $4,
+              collect_count = $5,
+              updated_at = $6
+          WHERE id = $1
+        `,
+          [
+            record.id,
+            record.raw_json,
+            record.title,
+            record.content,
+            record.collect_count,
+            record.updated_at,
+          ]
+        );
+      }
+
+      await client.query("COMMIT");
+      this.logger.info(
+        `📝 Updated full records: ${records.length} records`
       );
+    } catch (error) {
+      await client.query("ROLLBACK");
+      this.logger.error("Failed to update full records", {
+        error: error instanceof Error ? error.message : String(error),
+        recordsCount: records.length,
+      });
+      throw error;
+    } finally {
+      client.release();
     }
   }
+
+
 
   /**
    * Replace chunks with embeddings using atomic "delete-then-insert" strategy
