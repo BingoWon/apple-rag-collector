@@ -1,11 +1,9 @@
 import { type AppleAPIResponse, type BatchResult } from "./types/index.js";
 import { BatchErrorHandler } from "./utils/batch-error-handler.js";
-import { Logger } from "./utils/logger.js";
 
 class AppleAPIClient {
   private static readonly JSON_API_BASE =
     "https://developer.apple.com/tutorials/data" as const;
-  private logger = new Logger();
 
   async fetchDocuments(
     urls: string[]
@@ -47,13 +45,8 @@ class AppleAPIClient {
       }
     );
 
-    // Log error (automatically sends Telegram notification)
-    if (result.error) {
-      await this.logger.error(`Apple Doc Fetch Failed: ${documentUrl}`, {
-        error: result.error,
-      });
-    }
-
+    // Fetch fails will be packed into the result.error field and notified via Telegram.
+    // No need to log error here.
     return result;
   }
 
