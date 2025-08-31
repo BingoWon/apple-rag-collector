@@ -175,6 +175,9 @@ class ContentProcessor {
       parameters: () => this.renderParameters(section, references),
       aside: () => this.renderAside(section, references, indentLevel),
       termList: () => this.renderTermList(section, references, indentLevel),
+      restEndpoint: () => this.renderRestEndpoint(section),
+      restParameters: () => this.renderRestParameters(section, references),
+      restResponses: () => this.renderRestResponses(section, references),
     };
 
     return (
@@ -557,15 +560,15 @@ class ContentProcessor {
 
     if (section.items?.length) {
       section.items.forEach((item: any) => {
-        // Render the term (parameter name) with 2 spaces (will get +2 from renderParameters = 4 total)
+        // Render the term (parameter name) as bold text
         if (item.term?.inlineContent) {
           const termContent = item.term.inlineContent
             .map((inline: any) => this.renderInlineContent(inline, references))
             .join("");
-          content += `  ${termContent}\n`;
+          content += `**${termContent}**\n`;
         }
 
-        // Render the definition (parameter description) with 4 spaces (will get +2 from renderParameters = 6 total)
+        // Render the definition (parameter description)
         if (item.definition?.content) {
           item.definition.content.forEach((defItem: any) => {
             const result = this.convertContentSectionToMarkdown(
@@ -574,7 +577,7 @@ class ContentProcessor {
               0
             );
             if (result.content) {
-              content += `    ${result.content}\n`;
+              content += result.content + "\n";
             }
           });
         }
@@ -619,7 +622,7 @@ class ContentProcessor {
 
     section.parameters.forEach((param: any) => {
       if (param.name) {
-        content += `\`${param.name}\`\n`;
+        content += `### ${param.name}\n`;
 
         if (param.content?.length) {
           param.content.forEach((contentItem: any) => {
@@ -629,14 +632,7 @@ class ContentProcessor {
               0
             );
             if (result.content) {
-              // Split content into lines and add 2-space indent to each line
-              const lines = result.content.split("\n");
-              lines.forEach((line) => {
-                if (line.trim()) {
-                  // Only add indent to non-empty lines
-                  content += `  ${line}\n`;
-                }
-              });
+              content += result.content + "\n";
             }
           });
         }
@@ -644,6 +640,120 @@ class ContentProcessor {
     });
 
     return { title: "", content };
+  }
+
+  private renderRestEndpoint(section: any): { title: string; content: string } {
+    let content = "";
+
+    if (section.title) {
+      content += `## ${section.title}\n`;
+    }
+
+    if (section.tokens?.length) {
+      let endpointLine = "";
+      section.tokens.forEach((token: any) => {
+        if (token.kind === "method") {
+          endpointLine += `**${token.text}**`;
+        } else if (token.kind === "baseURL" || token.kind === "path") {
+          endpointLine += token.text;
+        } else if (token.kind === "parameter") {
+          endpointLine += `{${token.text}}`;
+        } else {
+          endpointLine += token.text;
+        }
+      });
+      content += `\`${endpointLine}\`\n`;
+    }
+
+    return { title: section.title || "", content };
+  }
+
+  private renderRestParameters(
+    section: any,
+    references: Record<string, any>
+  ): { title: string; content: string } {
+    let content = "";
+
+    if (section.title) {
+      content += `## ${section.title}\n`;
+    }
+
+    if (section.items?.length) {
+      section.items.forEach((item: any, index: number) => {
+        if (item.name) {
+          if (index > 0) content += "\n";
+          content += `### ${item.name}\n`;
+
+          if (item.type?.length) {
+            const typeText = item.type.map((t: any) => t.text).join("");
+            content += `**Type:** \`${typeText}\`\n`;
+          }
+
+          if (item.required) {
+            content += `**Required:** Yes\n`;
+          }
+
+          if (item.content?.length) {
+            item.content.forEach((contentItem: any) => {
+              const result = this.convertContentSectionToMarkdown(
+                contentItem,
+                references,
+                0
+              );
+              if (result.content) {
+                content += result.content + "\n";
+              }
+            });
+          }
+        }
+      });
+    }
+
+    return { title: section.title || "", content };
+  }
+
+  private renderRestResponses(
+    section: any,
+    references: Record<string, any>
+  ): { title: string; content: string } {
+    let content = "";
+
+    if (section.title) {
+      content += `## ${section.title}\n`;
+    }
+
+    if (section.items?.length) {
+      section.items.forEach((item: any, index: number) => {
+        if (item.status) {
+          if (index > 0) content += "\n";
+          content += `### ${item.status} ${item.reason || ""}\n`;
+
+          if (item.type?.length) {
+            const typeText = item.type.map((t: any) => t.text).join("");
+            content += `**Response Type:** \`${typeText}\`\n`;
+          }
+
+          if (item.mimeType) {
+            content += `**Content Type:** \`${item.mimeType}\`\n`;
+          }
+
+          if (item.content?.length) {
+            item.content.forEach((contentItem: any) => {
+              const result = this.convertContentSectionToMarkdown(
+                contentItem,
+                references,
+                0
+              );
+              if (result.content) {
+                content += result.content + "\n";
+              }
+            });
+          }
+        }
+      });
+    }
+
+    return { title: section.title || "", content };
   }
 
   private normalizeLineTerminators(text: string): string {
