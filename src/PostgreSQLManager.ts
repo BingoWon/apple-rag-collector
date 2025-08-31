@@ -197,6 +197,8 @@ class PostgreSQLManager {
         minMaxResult,
         distributionResult,
         chunksResult,
+        pagesQualityResult,
+        chunksQualityResult,
       ] = await Promise.all([
         client.query(`SELECT COUNT(*) as count FROM pages ${appleUrlFilter}`),
         client.query(
@@ -212,6 +214,20 @@ class PostgreSQLManager {
           `SELECT collect_count, COUNT(*) as count FROM pages ${appleUrlFilter} GROUP BY collect_count ORDER BY collect_count`
         ),
         client.query(`SELECT COUNT(*) as count FROM chunks ${appleUrlFilter}`),
+        // Pages missing data statistics
+        client.query(`
+          SELECT
+            COUNT(CASE WHEN content IS NULL OR content = '' THEN 1 END) as missing_content_count,
+            COUNT(CASE WHEN title IS NULL OR title = '' THEN 1 END) as missing_title_count
+          FROM pages ${appleUrlFilter}
+        `),
+        // Chunks missing data statistics
+        client.query(`
+          SELECT
+            COUNT(CASE WHEN content IS NULL OR content = '' THEN 1 END) as missing_content_count,
+            COUNT(CASE WHEN title IS NULL OR title = '' THEN 1 END) as missing_title_count
+          FROM chunks ${appleUrlFilter}
+        `),
       ]);
 
       const total = parseInt(totalResult.rows[0]?.count || "0");
@@ -220,6 +236,12 @@ class PostgreSQLManager {
       const minCollectCount = parseInt(minMaxResult.rows[0]?.min || "0");
       const maxCollectCount = parseInt(minMaxResult.rows[0]?.max || "0");
       const totalChunks = parseInt(chunksResult.rows[0]?.count || "0");
+
+      // Extract missing data statistics
+      const pagesMissingContentCount = parseInt(pagesQualityResult.rows[0]?.missing_content_count || "0");
+      const pagesMissingTitleCount = parseInt(pagesQualityResult.rows[0]?.missing_title_count || "0");
+      const chunksMissingContentCount = parseInt(chunksQualityResult.rows[0]?.missing_content_count || "0");
+      const chunksMissingTitleCount = parseInt(chunksQualityResult.rows[0]?.missing_title_count || "0");
 
       const collectCountDistribution: Record<
         string,
@@ -245,6 +267,26 @@ class PostgreSQLManager {
         minCollectCount,
         collectCountDistribution,
         totalChunks,
+        pagesMissingData: {
+          missingContentCount: pagesMissingContentCount,
+          missingContentPercentage: total > 0
+            ? `${Math.round((pagesMissingContentCount / total) * 10000) / 100}%`
+            : "0%",
+          missingTitleCount: pagesMissingTitleCount,
+          missingTitlePercentage: total > 0
+            ? `${Math.round((pagesMissingTitleCount / total) * 10000) / 100}%`
+            : "0%",
+        },
+        chunksMissingData: {
+          missingContentCount: chunksMissingContentCount,
+          missingContentPercentage: totalChunks > 0
+            ? `${Math.round((chunksMissingContentCount / totalChunks) * 10000) / 100}%`
+            : "0%",
+          missingTitleCount: chunksMissingTitleCount,
+          missingTitlePercentage: totalChunks > 0
+            ? `${Math.round((chunksMissingTitleCount / totalChunks) * 10000) / 100}%`
+            : "0%",
+        },
       };
     } finally {
       client.release();
@@ -262,7 +304,6 @@ class PostgreSQLManager {
           collect_count ASC,
           CASE WHEN content IS NULL OR content = '' THEN 0 ELSE 1 END ASC,
           CASE WHEN title IS NULL OR title = '' THEN 0 ELSE 1 END ASC,
-          url ASC
         LIMIT $1
       `,
         [batchSize]

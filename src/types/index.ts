@@ -111,6 +111,20 @@ interface DatabaseStats {
     { count: number; percentage: string }
   >; // Distribution of each collect_count value
   readonly totalChunks: number; // Total number of chunks in chunks table
+
+  // Data missing statistics
+  readonly pagesMissingData: {
+    readonly missingContentCount: number;
+    readonly missingContentPercentage: string;
+    readonly missingTitleCount: number;
+    readonly missingTitlePercentage: string;
+  };
+  readonly chunksMissingData: {
+    readonly missingContentCount: number;
+    readonly missingContentPercentage: string;
+    readonly missingTitleCount: number;
+    readonly missingTitlePercentage: string;
+  };
 }
 
 export type {
