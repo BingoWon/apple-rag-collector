@@ -177,18 +177,20 @@ class AppleDocCollector {
 
       // Update changed records with full content and updated_at
       await this.dbManager.batchUpdateFullRecords(
-        changedRecords.map((r) => ({
-          ...r.record,
-          collect_count: Number(r.record.collect_count) + 1,
-          updated_at: new Date(),
-          raw_json: r.newRawJson || JSON.stringify(r.collectResult.data),
-          title:
-            r.collectResult.data?.metadata?.title ||
-            r.collectResult.data?.title ||
-            null,
-          content:
-            r.collectResult.data?.content || r.collectResult.data?.text || null,
-        }))
+        changedRecords.map((r, index) => {
+          const processResult = processResults[index];
+          return {
+            ...r.record,
+            collect_count: Number(r.record.collect_count) + 1,
+            updated_at: new Date(),
+            raw_json: r.newRawJson || JSON.stringify(r.collectResult.data),
+            title: processResult?.data?.title ||
+                   r.collectResult.data?.metadata?.title ||
+                   r.collectResult.data?.title ||
+                   null,
+            content: processResult?.data?.content || "", // 🔧 使用处理后的内容
+          };
+        })
       );
     }
 

@@ -116,6 +116,12 @@ async function main(): Promise<void> {
                 `• Avg collect count: ${stats.avgCollectCount}\n` +
                 `• Range: ${stats.minCollectCount} - ${stats.maxCollectCount}\n` +
                 `• Total chunks: ${stats.totalChunks}\n\n` +
+                `📋 Pages Missing Data:\n` +
+                `• Missing content: ${stats.pagesMissingData.missingContentCount} (${stats.pagesMissingData.missingContentPercentage})\n` +
+                `• Missing title: ${stats.pagesMissingData.missingTitleCount} (${stats.pagesMissingData.missingTitlePercentage})\n\n` +
+                `🧩 Chunks Missing Data:\n` +
+                `• Missing content: ${stats.chunksMissingData.missingContentCount} (${stats.chunksMissingData.missingContentPercentage})\n` +
+                `• Missing title: ${stats.chunksMissingData.missingTitleCount} (${stats.chunksMissingData.missingTitlePercentage})\n\n` +
                 `⚡ Batches processed: ${result.batchNumber}\n` +
                 `🔧 Session chunks generated: ${result.totalChunks}`
             );
