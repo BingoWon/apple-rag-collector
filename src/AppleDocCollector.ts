@@ -216,12 +216,12 @@ class AppleDocCollector {
       (r) => !r.isPermanentError
     );
 
-    // Delete permanent error records (404, 403, 410)
+    // Delete permanent error records (404, 403, 410), no primary content
     if (permanentErrorRecords.length > 0) {
       const permanentUrls = permanentErrorRecords
         .map((r) => `${r.record.url} (${r.error})`)
         .join("\n");
-      this.logger.error(
+      this.logger.info(
         `🗑️ Permanent errors: ${permanentErrorRecords.length} URLs (deleting records)\nDeleted URLs:\n${permanentUrls}`
       );
 
