@@ -238,10 +238,18 @@ class PostgreSQLManager {
       const totalChunks = parseInt(chunksResult.rows[0]?.count || "0");
 
       // Extract missing data statistics
-      const pagesMissingContentCount = parseInt(pagesQualityResult.rows[0]?.missing_content_count || "0");
-      const pagesMissingTitleCount = parseInt(pagesQualityResult.rows[0]?.missing_title_count || "0");
-      const chunksMissingContentCount = parseInt(chunksQualityResult.rows[0]?.missing_content_count || "0");
-      const chunksMissingTitleCount = parseInt(chunksQualityResult.rows[0]?.missing_title_count || "0");
+      const pagesMissingContentCount = parseInt(
+        pagesQualityResult.rows[0]?.missing_content_count || "0"
+      );
+      const pagesMissingTitleCount = parseInt(
+        pagesQualityResult.rows[0]?.missing_title_count || "0"
+      );
+      const chunksMissingContentCount = parseInt(
+        chunksQualityResult.rows[0]?.missing_content_count || "0"
+      );
+      const chunksMissingTitleCount = parseInt(
+        chunksQualityResult.rows[0]?.missing_title_count || "0"
+      );
 
       const collectCountDistribution: Record<
         string,
@@ -269,23 +277,27 @@ class PostgreSQLManager {
         totalChunks,
         pagesMissingData: {
           missingContentCount: pagesMissingContentCount,
-          missingContentPercentage: total > 0
-            ? `${Math.round((pagesMissingContentCount / total) * 10000) / 100}%`
-            : "0%",
+          missingContentPercentage:
+            total > 0
+              ? `${Math.round((pagesMissingContentCount / total) * 10000) / 100}%`
+              : "0%",
           missingTitleCount: pagesMissingTitleCount,
-          missingTitlePercentage: total > 0
-            ? `${Math.round((pagesMissingTitleCount / total) * 10000) / 100}%`
-            : "0%",
+          missingTitlePercentage:
+            total > 0
+              ? `${Math.round((pagesMissingTitleCount / total) * 10000) / 100}%`
+              : "0%",
         },
         chunksMissingData: {
           missingContentCount: chunksMissingContentCount,
-          missingContentPercentage: totalChunks > 0
-            ? `${Math.round((chunksMissingContentCount / totalChunks) * 10000) / 100}%`
-            : "0%",
+          missingContentPercentage:
+            totalChunks > 0
+              ? `${Math.round((chunksMissingContentCount / totalChunks) * 10000) / 100}%`
+              : "0%",
           missingTitleCount: chunksMissingTitleCount,
-          missingTitlePercentage: totalChunks > 0
-            ? `${Math.round((chunksMissingTitleCount / totalChunks) * 10000) / 100}%`
-            : "0%",
+          missingTitlePercentage:
+            totalChunks > 0
+              ? `${Math.round((chunksMissingTitleCount / totalChunks) * 10000) / 100}%`
+              : "0%",
         },
       };
     } finally {

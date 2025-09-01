@@ -135,7 +135,7 @@ class ContentProcessor {
   private extractMainContent(docData: AppleAPIResponse): string {
     if (!docData.primaryContentSections?.length) return "";
 
-    const content = docData.primaryContentSections
+    const sections = docData.primaryContentSections
       .map((section) =>
         this.convertContentSectionToMarkdown(
           section,
@@ -144,8 +144,10 @@ class ContentProcessor {
         )
       )
       .filter((result) => result.content)
-      .map((result) => result.content)
-      .join("\n");
+      .map((result) => result.content.trim()); // Trim each section to remove trailing whitespace
+
+    // Join sections with exactly one empty line between them
+    const content = sections.join("\n\n");
 
     return this.normalizeLineTerminators(content);
   }
@@ -178,6 +180,9 @@ class ContentProcessor {
       restEndpoint: () => this.renderRestEndpoint(section),
       restParameters: () => this.renderRestParameters(section, references),
       restResponses: () => this.renderRestResponses(section, references),
+      details: () => this.renderDetails(section),
+      possibleValues: () => this.renderPossibleValues(section),
+      attributes: () => this.renderAttributes(section),
     };
 
     return (
@@ -751,6 +756,120 @@ class ContentProcessor {
           }
         }
       });
+    }
+
+    return { title: section.title || "", content };
+  }
+
+  private renderDetails(section: any): { title: string; content: string } {
+    let content = "";
+
+    if (section.title) {
+      content += `## ${section.title}\n\n`;
+    }
+
+    if (section.details) {
+      const details = section.details;
+      const items = [];
+
+      // Collect all items first
+      if (details.name) {
+        items.push(`**Name:** ${details.name}`);
+      }
+
+      // Render value type information
+      if (details.value && Array.isArray(details.value)) {
+        details.value.forEach((valueInfo: any) => {
+          if (valueInfo.baseType) {
+            const arrayMode = valueInfo.arrayMode ? " (array)" : "";
+            items.push(`**Type:** ${valueInfo.baseType}${arrayMode}`);
+          }
+        });
+      }
+
+      // Render platform information if available
+      if (
+        details.platforms &&
+        Array.isArray(details.platforms) &&
+        details.platforms.length > 0
+      ) {
+        const platformInfo = details.platforms
+          .map((platform: any) => this.formatPlatformInfo(platform))
+          .filter((info: string) => info.trim())
+          .join(", ");
+        if (platformInfo) {
+          items.push(`**Platforms:** ${platformInfo}`);
+        }
+      }
+
+      // Join items with proper spacing
+      content += items.join("\n\n");
+    }
+
+    return { title: section.title || "", content };
+  }
+
+  private renderPossibleValues(section: any): {
+    title: string;
+    content: string;
+  } {
+    let content = "";
+
+    if (section.title) {
+      content += `## ${section.title}\n\n`;
+    }
+
+    if (section.values && Array.isArray(section.values)) {
+      section.values.forEach((value: any) => {
+        if (value.name) {
+          content += `- **${value.name}**`;
+
+          // If there's content for this value, render it
+          if (
+            value.content &&
+            Array.isArray(value.content) &&
+            value.content.length > 0
+          ) {
+            content += ": ";
+            const valueContent = value.content
+              .map((contentItem: any) => {
+                if (contentItem.inlineContent) {
+                  return contentItem.inlineContent
+                    .map((inline: any) => this.renderInlineContent(inline, {}))
+                    .join("");
+                }
+                return "";
+              })
+              .join(" ");
+            content += valueContent;
+          }
+
+          content += "\n";
+        }
+      });
+      // No trailing newline needed - handled by extractMainContent
+    }
+
+    return { title: section.title || "", content };
+  }
+
+  private renderAttributes(section: any): { title: string; content: string } {
+    let content = "";
+
+    if (section.title) {
+      content += `## ${section.title}\n\n`;
+    }
+
+    if (section.attributes && Array.isArray(section.attributes)) {
+      const items: string[] = [];
+      section.attributes.forEach((attribute: any) => {
+        if (attribute.kind && attribute.value) {
+          items.push(`**${attribute.kind}:** ${attribute.value}`);
+        }
+      });
+
+      // Join items with proper spacing
+      content += items.join("\n\n");
     }
 
     return { title: section.title || "", content };
