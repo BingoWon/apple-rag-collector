@@ -39,7 +39,7 @@ fi
 
 # Install dependencies and build
 echo "Installing dependencies..."
-pnpm install --frozen-lockfile
+pnpm install
 
 echo "Building project..."
 pnpm build
