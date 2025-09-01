@@ -73,8 +73,13 @@ class AppleAPIClient {
     if (!data || typeof data !== "object") {
       throw new Error("Invalid response: not an object");
     }
-    if (!data.metadata && !data.primaryContentSections) {
-      throw new Error("Invalid response: missing required fields");
+    if (!data.primaryContentSections) {
+      throw new Error(
+        "PERMANENT_ERROR:NO_PRIMARY_CONTENT:Missing primaryContentSections field"
+      );
+    }
+    if (!data.metadata) {
+      throw new Error("Invalid response: missing metadata field");
     }
   }
 }
