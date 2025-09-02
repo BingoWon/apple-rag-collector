@@ -20,7 +20,7 @@ const TIMESTAMP =
 const SESSION_DIR = path.join(OUTPUT_DIR, TIMESTAMP);
 
 // Test URL
-const TEST_URL = "https://www.swift.org/documentation/docc/";
+const TEST_URL = " ttps://developer.apple.com/documentation/avkit";
 
 // Ensure output directory exists
 if (!fs.existsSync(OUTPUT_DIR)) {

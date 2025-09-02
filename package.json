@@ -1,22 +1,21 @@
 {
   "name": "apple-rag-collector",
   "version": "2.0.0",
-  "description": "Apple Developer Documentation Content Collector for RAG applications - Node.js + PostgreSQL",
-  "main": "dist/index.js",
+  "description": "Apple Developer Documentation Content Collector for RAG applications - Cloudflare Worker + PostgreSQL",
+  "main": "src/worker.ts",
   "type": "module",
   "scripts": {
-    "start": "node dist/index.js",
-    "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "fmt": "biome format --write .",
-    "pm2:start": "pm2 start ecosystem.config.cjs"
+    "deploy": "wrangler deploy",
+    "logs": "wrangler tail",
+    "fmt": "biome format --write ."
   },
   "keywords": [
     "apple",
     "documentation",
     "rag",
     "collector",
-    "nodejs",
+    "cloudflare-worker",
     "postgresql"
   ],
   "author": "",
@@ -26,17 +25,13 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.2",
-    "@types/node": "^22.9.0",
-    "@types/pg": "^8.15.5",
-    "prettier": "^3.3.3",
-    "tsx": "^4.7.0",
-    "typescript": "^5.6.3"
+    "@cloudflare/workers-types": "^4.20241218.0",
+    "@types/node": "^24.3.0",
+    "typescript": "^5.6.3",
+    "wrangler": "^4.33.1"
   },
   "dependencies": {
     "cheerio": "^1.0.0",
-    "dotenv": "^16.4.5",
-    "node-fetch": "^3.3.2",
-    "pg": "^8.16.3",
-    "pm2": "^6.0.8"
+    "postgres": "^3.4.7"
   }
 }
