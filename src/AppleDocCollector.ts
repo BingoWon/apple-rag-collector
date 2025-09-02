@@ -2,6 +2,7 @@ import { AppleAPIClient } from "./AppleAPIClient.js";
 import { ContentProcessor } from "./ContentProcessor.js";
 import { Chunker } from "./Chunker.js";
 import { createEmbeddings } from "./EmbeddingProvider.js";
+import { KeyManager } from "./KeyManager.js";
 import { PostgreSQLManager } from "./PostgreSQLManager.js";
 import { type DatabaseRecord, type BatchConfig } from "./types/index.js";
 import { Logger } from "./utils/logger.js";
@@ -24,23 +25,49 @@ interface ProcessingPlanItem {
   isPermanentError?: boolean;
 }
 
+interface ComparisonResult {
+  hasChanged: boolean;
+  difference?: string;
+}
+
 class AppleDocCollector {
   private readonly apiClient: AppleAPIClient;
   private readonly contentProcessor: ContentProcessor;
   private readonly chunker: Chunker;
   private readonly dbManager: PostgreSQLManager;
+  private readonly keyManager: KeyManager;
   private readonly logger: Logger;
   private readonly config: BatchConfig;
+  private readonly telegramNotifier?: any;
+  private readonly env:
+    | {
+        EMBEDDING_MODEL?: string;
+        EMBEDDING_DIM?: string;
+        EMBEDDING_API_BASE_URL?: string;
+        EMBEDDING_API_TIMEOUT?: string;
+      }
+    | undefined;
   private batchCounter: number = 0;
 
   constructor(
     dbManager: PostgreSQLManager,
+    keyManager: KeyManager,
     logger: Logger,
-    config: BatchConfig
+    config: BatchConfig,
+    env?: {
+      EMBEDDING_MODEL?: string;
+      EMBEDDING_DIM?: string;
+      EMBEDDING_API_BASE_URL?: string;
+      EMBEDDING_API_TIMEOUT?: string;
+    },
+    telegramNotifier?: any
   ) {
     this.dbManager = dbManager;
+    this.keyManager = keyManager;
     this.logger = logger;
     this.config = config;
+    this.env = env;
+    this.telegramNotifier = telegramNotifier;
     this.apiClient = new AppleAPIClient();
     this.contentProcessor = new ContentProcessor();
     this.chunker = new Chunker(config);
@@ -66,7 +93,7 @@ class AppleDocCollector {
 
     // Records are updated via intelligent field update strategy:
     // - Changed records: full update via batchUpdateFullRecords (including updated_at)
-    // - Unchanged/Error records: count-only update via batchUpdateCollectCountOnly
+    // - Unchanged/Error records: no database update needed (collect_count already updated in getBatchRecords)
 
     if (result.extractedUrls.size > 0) {
       await this.dbManager.batchInsertUrls([...result.extractedUrls]);
@@ -90,52 +117,133 @@ class AppleDocCollector {
     const urls = records.map((r) => r.url);
     const collectResults = await this.apiClient.fetchDocuments(urls);
 
-    // Unified processing plan creation
-    const processingPlan = this.createProcessingPlan(records, collectResults);
-
+    // Unified processing plan creation (now async)
+    const processingPlan = await this.createProcessingPlan(
+      records,
+      collectResults
+    );
     return await this.executeProcessingPlan(processingPlan);
   }
 
-  private createProcessingPlan(
+  // Unified and simplified processing plan creation
+  private async createProcessingPlan(
     records: DatabaseRecord[],
     collectResults: any[]
-  ): ProcessingPlanItem[] {
+  ): Promise<ProcessingPlanItem[]> {
     if (this.config.forceUpdateAll) {
       this.logger.info(
         `🔄 Force Update: Processing all ${records.length} URLs`
       );
     }
 
-    return records.map((record, index) => {
-      const collectResult = collectResults[index];
+    const planItems = await Promise.all(
+      records.map(async (record, index) => {
+        const collectResult = collectResults[index];
 
-      if (!collectResult.data) {
-        const isPermanent = BatchErrorHandler.isPermanentError(
-          collectResult.error || ""
-        );
-        return {
-          record,
-          collectResult,
-          hasChanged: false,
-          error: collectResult.error,
-          isPermanentError: isPermanent,
-        };
+        if (!collectResult.data) {
+          return this.createErrorPlanItem(record, collectResult);
+        }
+
+        return await this.createSuccessPlanItem(record, collectResult);
+      })
+    );
+
+    return planItems;
+  }
+
+  private createErrorPlanItem(
+    record: DatabaseRecord,
+    collectResult: any
+  ): ProcessingPlanItem {
+    const isPermanent = BatchErrorHandler.isPermanentError(
+      collectResult.error || ""
+    );
+    return {
+      record,
+      collectResult,
+      hasChanged: false,
+      error: collectResult.error,
+      isPermanentError: isPermanent,
+    };
+  }
+
+  private async createSuccessPlanItem(
+    record: DatabaseRecord,
+    collectResult: any
+  ): Promise<ProcessingPlanItem> {
+    const newRawJson = JSON.stringify(collectResult.data);
+    const comparison = this.compareContent(record.raw_json, collectResult.data);
+
+    // Log differences for debugging (now async)
+    await this.logContentChanges(record.url, comparison);
+
+    return {
+      record,
+      collectResult,
+      hasChanged: comparison.hasChanged,
+      newRawJson,
+    };
+  }
+
+  // Unified content comparison logic
+  private compareContent(oldRawJson: any, newData: any): ComparisonResult {
+    if (this.config.forceUpdateAll) {
+      return { hasChanged: true };
+    }
+
+    const oldObj = this.parseRawJson(oldRawJson);
+    const hasChanged = !this.deepEqual(oldObj, newData);
+
+    if (hasChanged) {
+      const oldJsonStr = this.normalizeRawJson(oldRawJson);
+      const newJsonStr = JSON.stringify(newData);
+      const difference = this.findFirstJsonDifference(oldJsonStr, newJsonStr);
+      return { hasChanged, difference };
+    }
+
+    return { hasChanged: false };
+  }
+
+  // Unified data normalization methods
+  private parseRawJson(rawJson: any): any | null {
+    if (rawJson === null || rawJson === undefined) return null;
+    return typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
+  }
+
+  private normalizeRawJson(rawJson: any): string | null {
+    if (rawJson === null || rawJson === undefined) return null;
+    return typeof rawJson === "string" ? rawJson : JSON.stringify(rawJson);
+  }
+
+  private async logContentChanges(
+    url: string,
+    comparison: ComparisonResult
+  ): Promise<void> {
+    if (
+      comparison.hasChanged &&
+      !this.config.forceUpdateAll &&
+      comparison.difference
+    ) {
+      const message = `📝 JSON Difference detected for ${url}:\n${comparison.difference}`;
+
+      // Log to console
+      this.logger.info(message);
+
+      // Send Telegram notification
+      if (this.telegramNotifier) {
+        try {
+          await this.telegramNotifier.notifyInfo(
+            `🔄 <b>Content Change Detected</b>\n\n` +
+              `📄 <b>URL:</b> ${url}\n\n` +
+              `📝 <b>Changes:</b>\n${comparison.difference}`
+          );
+        } catch (error) {
+          await this.logger.error(
+            `Failed to notify content change for ${url}: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
       }
-
-      const newRawJson = JSON.stringify(collectResult.data);
-      const oldRawJson = record.raw_json;
-
-      // Unified logic: Force Update overrides comparison, otherwise compare JSON
-      const hasChanged =
-        this.config.forceUpdateAll || oldRawJson !== newRawJson;
-
-      return {
-        record,
-        collectResult,
-        hasChanged,
-        newRawJson,
-      };
-    });
+    }
   }
 
   private async executeProcessingPlan(
@@ -165,6 +273,7 @@ class AppleDocCollector {
       this.logger.info(
         `📝 Content changed: ${changedRecords.length} URLs (full processing)`
       );
+
       if (allChunks.length > 0) {
         const chunksWithEmbeddings = allChunks.map((item, index) => ({
           url: item.url,
@@ -176,12 +285,12 @@ class AppleDocCollector {
       }
 
       // Update changed records with full content and updated_at
+      // Note: collect_count already incremented in getBatchRecords() and doesn't need updating
       await this.dbManager.batchUpdateFullRecords(
         changedRecords.map((r, index) => {
           const processResult = processResults[index];
           return {
             ...r.record,
-            collect_count: Number(r.record.collect_count) + 1,
             updated_at: new Date(),
             raw_json: r.newRawJson || JSON.stringify(r.collectResult.data),
             title:
@@ -189,22 +298,17 @@ class AppleDocCollector {
               r.collectResult.data?.metadata?.title ||
               r.collectResult.data?.title ||
               null,
-            content: processResult?.data?.content || "", // 🔧 使用处理后的内容
+            content: processResult?.data?.content || "",
           };
         })
       );
     }
 
-    // Update unchanged records (count only, preserve updated_at)
+    // Unchanged records: no database update needed
+    // Note: collect_count already incremented in getBatchRecords() for concurrency safety
     if (unchangedRecords.length > 0) {
       this.logger.info(
-        `🔄 Content unchanged: ${unchangedRecords.length} URLs (updating count only)`
-      );
-      await this.dbManager.batchUpdateCollectCountOnly(
-        unchangedRecords.map((r) => ({
-          id: r.record.id,
-          collect_count: Number(r.record.collect_count) + 1,
-        }))
+        `🔄 Content unchanged: ${unchangedRecords.length} URLs (no database update needed)`
       );
     }
 
@@ -230,20 +334,14 @@ class AppleDocCollector {
       );
     }
 
-    // Update temporary error records (count only, preserve updated_at)
+    // Temporary error records: no database update needed
+    // Note: collect_count already incremented in getBatchRecords() for concurrency safety
     if (temporaryErrorRecords.length > 0) {
       const temporaryUrls = temporaryErrorRecords
         .map((r) => `${r.record.url} (${r.error})`)
         .join("\n");
-      this.logger.error(
-        `⏳ Temporary errors: ${temporaryErrorRecords.length} URLs (updating count only)\nFailed URLs:\n${temporaryUrls}`
-      );
-
-      await this.dbManager.batchUpdateCollectCountOnly(
-        temporaryErrorRecords.map((r) => ({
-          id: r.record.id,
-          collect_count: Number(r.record.collect_count) + 1,
-        }))
+      await this.logger.error(
+        `Temporary errors: ${temporaryErrorRecords.length} URLs in batch ${this.batchCounter}\n${temporaryUrls}`
       );
     }
 
@@ -288,7 +386,12 @@ class AppleDocCollector {
 
     const embeddings =
       embeddingTexts.length > 0
-        ? await createEmbeddings(embeddingTexts, this.logger)
+        ? await createEmbeddings(
+            embeddingTexts,
+            this.keyManager,
+            this.logger,
+            this.env
+          )
         : [];
 
     return { allChunks, embeddings };
@@ -311,12 +414,12 @@ class AppleDocCollector {
       const { record, collectResult, hasChanged, error } = planItem;
 
       if (error) {
-        // Error records updated via batchUpdateCollectCountOnly, return original for result tracking
+        // Error records: collect_count already updated in getBatchRecords, return original for result tracking
         failureRecords.push(record);
         continue;
       }
 
-      // Success records updated via appropriate method, return original for result tracking
+      // Success records: updated via appropriate method, return original for result tracking
       successRecords.push(record);
 
       // Extract URLs only from changed records that were processed
@@ -337,10 +440,134 @@ class AppleDocCollector {
     return {
       successRecords,
       failureRecords,
-      deleteIds: [], // No deletions in current implementation
+      deleteIds: [],
       extractedUrls,
       totalChunks: allChunks.length,
     };
+  }
+
+  // Simplified and unified difference detection
+  private findFirstJsonDifference(
+    oldJson: string | null,
+    newJson: string
+  ): string {
+    try {
+      const oldObj = oldJson ? JSON.parse(oldJson) : null;
+      const newObj = JSON.parse(newJson);
+      const difference = this.findObjectDifference(oldObj, newObj, "");
+      return difference || "No specific difference found (possibly formatting)";
+    } catch (error) {
+      return this.findStringDifference(oldJson, newJson);
+    }
+  }
+
+  private findObjectDifference(
+    oldObj: any,
+    newObj: any,
+    path: string
+  ): string | null {
+    if (oldObj === null && newObj === null) return null;
+    if (oldObj === null)
+      return `${path}: null → ${JSON.stringify(newObj).substring(0, 100)}...`;
+    if (newObj === null)
+      return `${path}: ${JSON.stringify(oldObj).substring(0, 100)}... → null`;
+
+    if (typeof oldObj !== "object" || typeof newObj !== "object") {
+      if (oldObj !== newObj) {
+        const oldStr = JSON.stringify(oldObj).substring(0, 50);
+        const newStr = JSON.stringify(newObj).substring(0, 50);
+        return `${path}: ${oldStr}... → ${newStr}...`;
+      }
+      return null;
+    }
+
+    if (Array.isArray(oldObj) && Array.isArray(newObj)) {
+      if (oldObj.length !== newObj.length) {
+        return `${path}: Array length ${oldObj.length} → ${newObj.length}`;
+      }
+      for (let i = 0; i < oldObj.length; i++) {
+        const diff = this.findObjectDifference(
+          oldObj[i],
+          newObj[i],
+          `${path}[${i}]`
+        );
+        if (diff) return diff;
+      }
+      return null;
+    }
+
+    const allKeys = new Set([...Object.keys(oldObj), ...Object.keys(newObj)]);
+    for (const key of allKeys) {
+      const currentPath = path ? `${path}.${key}` : key;
+
+      if (!(key in oldObj)) {
+        const newValue = JSON.stringify(newObj[key]).substring(0, 50);
+        return `${currentPath}: (new) → ${newValue}...`;
+      }
+      if (!(key in newObj)) {
+        const oldValue = JSON.stringify(oldObj[key]).substring(0, 50);
+        return `${currentPath}: ${oldValue}... → (deleted)`;
+      }
+
+      const diff = this.findObjectDifference(
+        oldObj[key],
+        newObj[key],
+        currentPath
+      );
+      if (diff) return diff;
+    }
+
+    return null;
+  }
+
+  private findStringDifference(oldStr: string | null, newStr: string): string {
+    if (!oldStr) return `Length difference: 0 → ${newStr.length}`;
+
+    const maxLength = Math.min(oldStr.length, newStr.length, 200);
+
+    for (let i = 0; i < maxLength; i++) {
+      if (oldStr[i] !== newStr[i]) {
+        const start = Math.max(0, i - 20);
+        const oldContext = oldStr.substring(start, i + 20);
+        const newContext = newStr.substring(start, i + 20);
+        return `Character difference at position ${i}:\nOld: ...${oldContext}...\nNew: ...${newContext}...`;
+      }
+    }
+
+    if (oldStr.length !== newStr.length) {
+      return `Length difference: ${oldStr.length} → ${newStr.length}`;
+    }
+
+    return "Strings appear identical in first 200 characters";
+  }
+
+  // Optimized deep equality check
+  private deepEqual(obj1: any, obj2: any): boolean {
+    if (obj1 === obj2) return true;
+    if (obj1 == null || obj2 == null) return obj1 === obj2;
+    if (typeof obj1 !== typeof obj2) return false;
+    if (typeof obj1 !== "object") return obj1 === obj2;
+    if (Array.isArray(obj1) !== Array.isArray(obj2)) return false;
+
+    if (Array.isArray(obj1)) {
+      if (obj1.length !== obj2.length) return false;
+      for (let i = 0; i < obj1.length; i++) {
+        if (!this.deepEqual(obj1[i], obj2[i])) return false;
+      }
+      return true;
+    }
+
+    const keys1 = Object.keys(obj1);
+    const keys2 = Object.keys(obj2);
+
+    if (keys1.length !== keys2.length) return false;
+
+    for (const key of keys1) {
+      if (!keys2.includes(key)) return false;
+      if (!this.deepEqual(obj1[key], obj2[key])) return false;
+    }
+
+    return true;
   }
 }
 

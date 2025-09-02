@@ -1,32 +1,13 @@
-/**
- * Telegram Notifier - Simple notification system
- */
-
 class TelegramNotifier {
-  private readonly url: string;
-  private readonly enabled: boolean;
+  private url = "";
 
-  constructor() {
-    this.url = process.env["TELEGRAM_BOT_URL"] || "";
-    this.enabled = Boolean(this.url);
+  setUrl(url?: string): void {
+    this.url = url || "";
   }
 
-  async notifyError(error: Error): Promise<void> {
-    if (!this.enabled) return;
-    const text = `🚨 <b>Apple RAG Collector Error:</b> ${error.message}`;
-    await this.send(text);
-  }
-
-  async notifyWarning(message: string): Promise<void> {
-    if (!this.enabled) return;
-    const text = `⚠️ <b>Apple RAG Collector Warning:</b> ${message}`;
-    await this.send(text);
-  }
-
-  async notifyInfo(message: string): Promise<void> {
-    if (!this.enabled) return;
-    const text = `ℹ️ <b>Apple RAG Collector:</b> ${message}`;
-    await this.send(text);
+  async notify(message: string): Promise<void> {
+    if (!this.url) return;
+    await this.send(message);
   }
 
   private async send(text: string): Promise<void> {
@@ -34,30 +15,40 @@ class TelegramNotifier {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-      await fetch(this.url, {
+      const response = await fetch(this.url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, parse_mode: "HTML" }),
+        body: JSON.stringify({ text }),
         signal: controller.signal,
       });
 
       clearTimeout(timeoutId);
-    } catch {}
-  }
 
-  isEnabled(): boolean {
-    return this.enabled;
-  }
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[Telegram] HTTP ${response.status}: ${errorText}`);
+        throw new Error(
+          `Telegram API error: ${response.status} - ${errorText}`
+        );
+      }
 
-  getConfig(): { enabled: boolean; hasUrl: boolean } {
-    return {
-      enabled: this.enabled,
-      hasUrl: Boolean(this.url),
-    };
+      const result = (await response.json()) as any;
+      if (!result.ok) {
+        console.error(`[Telegram] API error:`, result);
+        throw new Error(
+          `Telegram API error: ${result.description || "Unknown error"}`
+        );
+      }
+
+      console.log(`[Telegram] Message sent successfully`);
+    } catch (error) {
+      console.error(
+        `[Telegram] Send failed:`,
+        error instanceof Error ? error.message : String(error)
+      );
+      // Don't re-throw to avoid breaking the main process
+    }
   }
 }
 
-// Global instance
-const telegramNotifier = new TelegramNotifier();
-
-export { TelegramNotifier, telegramNotifier };
+export { TelegramNotifier };

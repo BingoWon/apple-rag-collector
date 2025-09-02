@@ -9,13 +9,6 @@
  * - Multi-key management with automatic failover
  * - L2 normalized 2560-dimension vectors
  * - Atomic batch error handling
- * - Zero code redundancy
- *
- * Usage:
- * ```typescript
- * import { createEmbeddings } from './EmbeddingProvider.js';
- * const embeddings = await createEmbeddings(["text1", "text2", "text3"]);
- * ```
  */
 
 import { KeyManager } from "./KeyManager.js";
@@ -32,14 +25,18 @@ export interface EmbeddingConfig {
   readonly timeout: number;
 }
 
-export function createEmbeddingConfig(): EmbeddingConfig {
+export function createEmbeddingConfig(env?: {
+  EMBEDDING_MODEL?: string;
+  EMBEDDING_DIM?: string;
+  EMBEDDING_API_BASE_URL?: string;
+  EMBEDDING_API_TIMEOUT?: string;
+}): EmbeddingConfig {
   return {
-    model: process.env["EMBEDDING_MODEL"] || "Qwen/Qwen3-Embedding-4B",
-    dimension: parseInt(process.env["EMBEDDING_DIM"] || "2560"),
+    model: env?.EMBEDDING_MODEL || "Qwen/Qwen3-Embedding-4B",
+    dimension: parseInt(env?.EMBEDDING_DIM || "2560"),
     apiBaseUrl:
-      process.env["EMBEDDING_API_BASE_URL"] ||
-      "https://api.siliconflow.cn/v1/embeddings",
-    timeout: parseInt(process.env["EMBEDDING_API_TIMEOUT"] || "30") * 1000,
+      env?.EMBEDDING_API_BASE_URL || "https://api.siliconflow.cn/v1/embeddings",
+    timeout: parseInt(env?.EMBEDDING_API_TIMEOUT || "30") * 1000,
   };
 }
 
@@ -55,10 +52,14 @@ export class BatchEmbeddingProvider {
   private readonly keyManager: KeyManager;
   private readonly logger: Logger;
 
-  constructor(config: EmbeddingConfig, logger?: Logger) {
+  constructor(
+    config: EmbeddingConfig,
+    keyManager: KeyManager,
+    logger?: Logger
+  ) {
     this.config = config;
-    this.keyManager = new KeyManager();
-    this.logger = logger || new Logger("info");
+    this.keyManager = keyManager;
+    this.logger = logger || new Logger();
   }
 
   /**
@@ -72,7 +73,7 @@ export class BatchEmbeddingProvider {
 
     for (let keyAttempt = 0; keyAttempt < maxKeyAttempts; keyAttempt++) {
       try {
-        const apiKey = this.keyManager.getCurrentKey();
+        const apiKey = await this.keyManager.getCurrentKey();
 
         for (let retry = 0; retry < 3; retry++) {
           try {
@@ -95,50 +96,28 @@ export class BatchEmbeddingProvider {
             if (this.isTimeoutError(error as Error)) {
               // Only log timeout warning on final retry attempt
               if (retry === 2) {
-                this.logger.warn(
-                  `⏰ Embedding API timeout (${this.config.timeout}ms) - Final attempt failed - Batch size: ${texts.length} texts`,
-                  {
-                    timeout: this.config.timeout,
-                    batchSize: texts.length,
-                    totalRetries: retry + 1,
-                    keyAttempt: keyAttempt + 1,
-                    error: errorMessage,
-                  }
+                await this.logger.warn(
+                  `Embedding timeout (${this.config.timeout}ms) final attempt failed, batch size ${texts.length}: ${errorMessage}`
                 );
               }
             } else if (this.isApiKeyError(error as Error)) {
-              this.logger.info(`🔑 API key error - Removing invalid key`, {
-                error: errorMessage,
-                keyAttempt: keyAttempt + 1,
-              });
+              this.logger.info(
+                `API key invalid, removing (attempt ${keyAttempt + 1}): ${errorMessage}`
+              );
               await this.keyManager.removeKey(apiKey);
               break; // Try next key
             } else if (this.isRateLimitError(error as Error)) {
               this.logger.info(
-                `🚦 Rate limit exceeded - Switching to next key`,
-                {
-                  error: errorMessage,
-                  keyAttempt: keyAttempt + 1,
-                }
+                `Rate limit exceeded, switching key (attempt ${keyAttempt + 1}): ${errorMessage}`
               );
-              this.keyManager.switchToNextKey();
               break; // Try next key
             } else {
-              this.logger.warn(`🔄 Embedding API error`, {
-                error: errorMessage,
-                retry: retry + 1,
-                keyAttempt: keyAttempt + 1,
-                batchSize: texts.length,
-              });
-            }
-
-            if (this.isApiKeyError(error as Error)) {
-              await this.keyManager.removeKey(apiKey);
-              break; // Try next key
+              await this.logger.warn(
+                `Embedding error (retry ${retry + 1}, key ${keyAttempt + 1}, batch ${texts.length}): ${errorMessage}`
+              );
             }
 
             if (this.isRateLimitError(error as Error)) {
-              this.keyManager.switchToNextKey();
               break; // Try next key
             }
 
@@ -244,32 +223,6 @@ export class BatchEmbeddingProvider {
 }
 
 // ============================================================================
-// Global Provider Management
-// ============================================================================
-
-// Process-safe global batch embedding provider instance
-let globalBatchProvider: BatchEmbeddingProvider | null = null;
-let currentPid: number | null = null;
-
-/**
- * Get or create process-safe global batch embedding provider
- */
-function getBatchProvider(
-  config?: EmbeddingConfig,
-  logger?: Logger
-): BatchEmbeddingProvider {
-  const currentProcessPid = process.pid;
-
-  if (globalBatchProvider === null || currentPid !== currentProcessPid) {
-    currentPid = currentProcessPid;
-    const finalConfig = config || createEmbeddingConfig();
-    globalBatchProvider = new BatchEmbeddingProvider(finalConfig, logger);
-  }
-
-  return globalBatchProvider;
-}
-
-// ============================================================================
 // Public API - Pure Batch Processing Only
 // ============================================================================
 
@@ -277,15 +230,25 @@ function getBatchProvider(
  * Create L2 normalized embeddings for batch of texts - True batch API call
  *
  * @param texts Array of texts to encode
+ * @param keyManager KeyManager instance for API key management
  * @param logger Optional logger for enhanced error reporting
+ * @param env Optional environment variables for configuration
  * @returns Array of L2 normalized embedding vectors
  */
 export async function createEmbeddings(
   texts: string[],
-  logger?: Logger
+  keyManager: KeyManager,
+  logger?: Logger,
+  env?: {
+    EMBEDDING_MODEL?: string;
+    EMBEDDING_DIM?: string;
+    EMBEDDING_API_BASE_URL?: string;
+    EMBEDDING_API_TIMEOUT?: string;
+  }
 ): Promise<number[][]> {
   if (!texts.length) return [];
 
-  const provider = getBatchProvider(undefined, logger);
+  const config = env ? createEmbeddingConfig(env) : createEmbeddingConfig();
+  const provider = new BatchEmbeddingProvider(config, keyManager, logger);
   return await provider.encodeBatch(texts);
 }

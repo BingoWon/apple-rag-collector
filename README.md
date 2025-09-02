@@ -35,6 +35,44 @@ Batch processing system for Apple Developer Documentation with 5-10x performance
 - Production-ready error handling
 - Streamlined database operations
 - Real-time Telegram Bot notifications for errors and system status
+- Cloudflare Workers deployment with request limit optimization
+
+## 🚀 Quick Start
+
+### 1. Configuration Setup
+
+Copy the configuration template and customize it for your environment:
+
+```bash
+cp wrangler.toml.example wrangler.toml
+```
+
+Edit `wrangler.toml` with your own values. See [CONFIGURATION.md](CONFIGURATION.md) for detailed setup instructions.
+
+### 2. Choose Your Cloudflare Workers Plan
+
+**Free Plan (50 subrequests/request):**
+```toml
+BATCH_SIZE = "10"
+BATCH_COUNT = "5"
+# Total: 50 requests
+```
+
+**Paid Plan (1000 subrequests/request):**
+```toml
+BATCH_SIZE = "45"
+BATCH_COUNT = "20"
+# Total: 900 requests (safely under limit)
+```
+
+### 3. Deploy
+
+```bash
+pnpm install
+pnpm run deploy
+```
+
+For detailed configuration options, see [CONFIGURATION.md](CONFIGURATION.md).
 
 ## 🏗️ Architecture
 
@@ -88,12 +126,6 @@ Update your apps to use new features, and test your apps against API changes.
 Xcode 26 beta 7 includes SDKs for iOS 26, iPadOS 26...
 ```
 
-### JSON Chunk Structure
-```json
-{
-  "title": "Article: Xcode 26 Beta 7 Release Notes\nUpdate your apps to use new features...",
-  "content": "## Overview\nXcode 26 beta 7 includes SDKs..."
-}
 ```
 
 ## 🧠 Intelligent Content Comparison

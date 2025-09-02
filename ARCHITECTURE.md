@@ -118,9 +118,9 @@ WHERE id = ANY($n)
 
 | 记录类型 | 更新方法 | 更新字段 | updated_at |
 |---------|---------|---------|-----------|
-| 内容变化 | `batchUpdateFullRecords` | 全部字段 | ✅ 更新 |
-| 内容未变化 | `batchUpdateCollectCountOnly` | 仅 collect_count | ❌ 保持不变 |
-| 获取失败 | `batchUpdateCollectCountOnly` | 仅 collect_count | ❌ 保持不变 |
+| 内容变化 | `batchUpdateFullRecords` | raw_json, title, content, updated_at | ✅ 更新 |
+| 内容未变化 | 无数据库操作 | collect_count 已在 getBatchRecords 中更新 | ❌ 保持不变 |
+| 获取失败 | 无数据库操作 | collect_count 已在 getBatchRecords 中更新 | ❌ 保持不变 |
 
 ## 数据流图
 
@@ -134,8 +134,8 @@ WHERE id = ANY($n)
 [处理计划]
     ↓ executeProcessingPlan()
     ├── [变化记录] → 内容处理 → 分块 → 向量化 → 存储 chunks → 完整更新 pages
-    ├── [未变化记录] → 仅更新 collect_count
-    └── [错误记录] → 仅更新 collect_count
+    ├── [未变化记录] → 无数据库操作 (collect_count 已在 getBatchRecords 中更新)
+    └── [错误记录] → 无数据库操作 (collect_count 已在 getBatchRecords 中更新)
 ```
 
 ## 关键设计决策
