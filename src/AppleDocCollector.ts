@@ -5,7 +5,7 @@ import { createEmbeddings } from "./EmbeddingProvider.js";
 import { KeyManager } from "./KeyManager.js";
 import { PostgreSQLManager } from "./PostgreSQLManager.js";
 import { type DatabaseRecord, type BatchConfig } from "./types/index.js";
-import { Logger } from "./utils/logger.js";
+import { logger } from "./utils/logger.js";
 import { BatchErrorHandler } from "./utils/batch-error-handler.js";
 
 interface ProcessBatchResult {
@@ -36,9 +36,7 @@ class AppleDocCollector {
   private readonly chunker: Chunker;
   private readonly dbManager: PostgreSQLManager;
   private readonly keyManager: KeyManager;
-  private readonly logger: Logger;
   private readonly config: BatchConfig;
-  private readonly telegramNotifier?: any;
   private readonly env:
     | {
         EMBEDDING_MODEL?: string;
@@ -52,22 +50,18 @@ class AppleDocCollector {
   constructor(
     dbManager: PostgreSQLManager,
     keyManager: KeyManager,
-    logger: Logger,
     config: BatchConfig,
     env?: {
       EMBEDDING_MODEL?: string;
       EMBEDDING_DIM?: string;
       EMBEDDING_API_BASE_URL?: string;
       EMBEDDING_API_TIMEOUT?: string;
-    },
-    telegramNotifier?: any
+    }
   ) {
     this.dbManager = dbManager;
     this.keyManager = keyManager;
-    this.logger = logger;
     this.config = config;
     this.env = env;
-    this.telegramNotifier = telegramNotifier;
     this.apiClient = new AppleAPIClient();
     this.contentProcessor = new ContentProcessor();
     this.chunker = new Chunker(config);
@@ -85,7 +79,7 @@ class AppleDocCollector {
     this.batchCounter++;
     const startTime = Date.now();
 
-    this.logger.info(
+    logger.info(
       `\n🚀 Batch #${this.batchCounter}: Processing ${records.length} URLs`
     );
 
@@ -101,7 +95,7 @@ class AppleDocCollector {
 
     const duration = Date.now() - startTime;
 
-    this.logger.info(
+    logger.info(
       `✅ Batch #${this.batchCounter} completed in ${duration}ms: ${result.totalChunks} chunks generated`
     );
 
@@ -131,9 +125,7 @@ class AppleDocCollector {
     collectResults: any[]
   ): Promise<ProcessingPlanItem[]> {
     if (this.config.forceUpdateAll) {
-      this.logger.info(
-        `🔄 Force Update: Processing all ${records.length} URLs`
-      );
+      logger.info(`🔄 Force Update: Processing all ${records.length} URLs`);
     }
 
     const planItems = await Promise.all(
@@ -224,25 +216,8 @@ class AppleDocCollector {
       !this.config.forceUpdateAll &&
       comparison.difference
     ) {
-      const message = `📝 JSON Difference detected for ${url}:\n${comparison.difference}`;
-
-      // Log to console
-      this.logger.info(message);
-
-      // Send Telegram notification
-      if (this.telegramNotifier) {
-        try {
-          await this.telegramNotifier.notifyInfo(
-            `🔄 <b>Content Change Detected</b>\n\n` +
-              `📄 <b>URL:</b> ${url}\n\n` +
-              `📝 <b>Changes:</b>\n${comparison.difference}`
-          );
-        } catch (error) {
-          await this.logger.error(
-            `Failed to notify content change for ${url}: ${error instanceof Error ? error.message : String(error)}`
-          );
-        }
-      }
+      const message = `📝 Content change detected for ${url}:\n${comparison.difference}`;
+      logger.info(message);
     }
   }
 
@@ -270,7 +245,7 @@ class AppleDocCollector {
 
     // Store changed chunks and update records with full content
     if (changedRecords.length > 0) {
-      this.logger.info(
+      logger.info(
         `📝 Content changed: ${changedRecords.length} URLs (full processing)`
       );
 
@@ -307,7 +282,7 @@ class AppleDocCollector {
     // Unchanged records: no database update needed
     // Note: collect_count already incremented in getBatchRecords() for concurrency safety
     if (unchangedRecords.length > 0) {
-      this.logger.info(
+      logger.info(
         `🔄 Content unchanged: ${unchangedRecords.length} URLs (no database update needed)`
       );
     }
@@ -325,7 +300,7 @@ class AppleDocCollector {
       const permanentUrls = permanentErrorRecords
         .map((r) => `${r.record.url} (${r.error})`)
         .join("\n");
-      this.logger.info(
+      logger.info(
         `🗑️ Permanent errors: ${permanentErrorRecords.length} URLs (deleting records)\nDeleted URLs:\n${permanentUrls}`
       );
 
@@ -340,7 +315,7 @@ class AppleDocCollector {
       const temporaryUrls = temporaryErrorRecords
         .map((r) => `${r.record.url} (${r.error})`)
         .join("\n");
-      await this.logger.error(
+      await logger.warn(
         `Temporary errors: ${temporaryErrorRecords.length} URLs in batch ${this.batchCounter}\n${temporaryUrls}`
       );
     }
@@ -386,12 +361,7 @@ class AppleDocCollector {
 
     const embeddings =
       embeddingTexts.length > 0
-        ? await createEmbeddings(
-            embeddingTexts,
-            this.keyManager,
-            this.logger,
-            this.env
-          )
+        ? await createEmbeddings(embeddingTexts, this.keyManager, this.env)
         : [];
 
     return { allChunks, embeddings };

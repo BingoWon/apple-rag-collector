@@ -12,7 +12,7 @@
  */
 
 import { KeyManager } from "./KeyManager.js";
-import { Logger } from "./utils/logger.js";
+import { logger } from "./utils/logger.js";
 
 // ============================================================================
 // Configuration
@@ -50,16 +50,10 @@ export function createEmbeddingConfig(env?: {
 export class BatchEmbeddingProvider {
   private readonly config: EmbeddingConfig;
   private readonly keyManager: KeyManager;
-  private readonly logger: Logger;
 
-  constructor(
-    config: EmbeddingConfig,
-    keyManager: KeyManager,
-    logger?: Logger
-  ) {
+  constructor(config: EmbeddingConfig, keyManager: KeyManager) {
     this.config = config;
     this.keyManager = keyManager;
-    this.logger = logger || new Logger();
   }
 
   /**
@@ -96,23 +90,23 @@ export class BatchEmbeddingProvider {
             if (this.isTimeoutError(error as Error)) {
               // Only log timeout warning on final retry attempt
               if (retry === 2) {
-                await this.logger.warn(
+                await logger.warn(
                   `Embedding timeout (${this.config.timeout}ms) final attempt failed, batch size ${texts.length}: ${errorMessage}`
                 );
               }
             } else if (this.isApiKeyError(error as Error)) {
-              this.logger.info(
+              logger.info(
                 `API key invalid, removing (attempt ${keyAttempt + 1}): ${errorMessage}`
               );
               await this.keyManager.removeKey(apiKey);
               break; // Try next key
             } else if (this.isRateLimitError(error as Error)) {
-              this.logger.info(
+              logger.info(
                 `Rate limit exceeded, switching key (attempt ${keyAttempt + 1}): ${errorMessage}`
               );
               break; // Try next key
             } else {
-              await this.logger.warn(
+              await logger.warn(
                 `Embedding error (retry ${retry + 1}, key ${keyAttempt + 1}, batch ${texts.length}): ${errorMessage}`
               );
             }
@@ -238,7 +232,6 @@ export class BatchEmbeddingProvider {
 export async function createEmbeddings(
   texts: string[],
   keyManager: KeyManager,
-  logger?: Logger,
   env?: {
     EMBEDDING_MODEL?: string;
     EMBEDDING_DIM?: string;
@@ -249,6 +242,6 @@ export async function createEmbeddings(
   if (!texts.length) return [];
 
   const config = env ? createEmbeddingConfig(env) : createEmbeddingConfig();
-  const provider = new BatchEmbeddingProvider(config, keyManager, logger);
+  const provider = new BatchEmbeddingProvider(config, keyManager);
   return await provider.encodeBatch(texts);
 }
