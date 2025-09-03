@@ -4,13 +4,10 @@ import {
   type DatabaseStats,
   type ChunkRecord,
 } from "./types/index.js";
-import { Logger } from "./utils/logger.js";
+import { logger } from "./utils/logger.js";
 
 class PostgreSQLManager {
-  constructor(
-    private readonly sql: postgres.Sql,
-    private readonly logger: Logger = new Logger()
-  ) {}
+  constructor(private readonly sql: postgres.Sql) {}
 
   private async withTransaction<T>(
     operation: (sql: postgres.Sql) => Promise<T>
@@ -21,7 +18,7 @@ class PostgreSQLManager {
   }
 
   async initialize(): Promise<void> {
-    this.logger.info("Database connection ready");
+    logger.info("Database connection ready");
   }
 
   async batchInsertUrls(urls: string[]): Promise<number> {
@@ -54,8 +51,6 @@ class PostgreSQLManager {
       )
       RETURNING *
     `;
-
-    this.logger.info(`Acquired ${result.length} records for processing`);
 
     return result.map((row: any) => ({
       ...row,
@@ -189,7 +184,7 @@ class PostgreSQLManager {
         `;
       }
 
-      this.logger.info(`📝 Updated full records: ${records.length} records`);
+      logger.info(`📝 Updated full records: ${records.length} records`);
     });
   }
 
@@ -206,7 +201,7 @@ class PostgreSQLManager {
         DELETE FROM pages WHERE id = ANY(${recordIds})
       `;
 
-      this.logger.info(
+      logger.info(
         `🗑️ Deleted permanent error records: ${pagesDeleteResult.count} pages, ${chunksDeleteResult.count} chunks`
       );
     });
@@ -229,7 +224,7 @@ class PostgreSQLManager {
         const deleteResult = await sql`
           DELETE FROM chunks WHERE url = ANY(${urls})
         `;
-        this.logger.info(
+        logger.info(
           `🗑️ Deleted ${deleteResult.count || 0} existing chunks for ${urls.length} URLs`
         );
       }
@@ -240,10 +235,6 @@ class PostgreSQLManager {
           VALUES (${chunk.url}, ${chunk.title}, ${chunk.content}, ${`[${chunk.embedding.join(",")}]`})
         `;
       }
-
-      this.logger.info(
-        `Replaced chunks: ${urls.length} URLs, ${chunks.length} chunks`
-      );
     });
   }
 

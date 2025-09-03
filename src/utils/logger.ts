@@ -1,6 +1,4 @@
-import { TelegramNotifier } from "./telegram-notifier.js";
-
-const telegram = new TelegramNotifier();
+import { notifyTelegram } from "./telegram-notifier.js";
 
 class Logger {
   info(message: string): void {
@@ -9,17 +7,14 @@ class Logger {
 
   async warn(message: string): Promise<void> {
     console.warn(message);
-    await telegram.notify(message);
   }
 
   async error(message: string): Promise<void> {
     console.error(message);
-    await telegram.notify(message);
+    await notifyTelegram(message);
   }
 }
 
-function setupTelegram(url?: string): void {
-  telegram.setUrl(url);
-}
+const logger = new Logger();
 
-export { Logger, setupTelegram };
+export { logger };

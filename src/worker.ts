@@ -5,7 +5,11 @@
 
 import { AppleDocCollector } from "./AppleDocCollector.js";
 import { PostgreSQLManager } from "./PostgreSQLManager.js";
-import { Logger, setupTelegram } from "./utils/logger.js";
+import { logger } from "./utils/logger.js";
+import {
+  configureTelegram,
+  notifyTelegram,
+} from "./utils/telegram-notifier.js";
 import type { BatchConfig } from "./types/index.js";
 import postgres from "postgres";
 
@@ -34,11 +38,10 @@ export default {
     env: Env,
     _ctx: ExecutionContext
   ): Promise<void> {
-    setupTelegram(env.TELEGRAM_BOT_URL);
-    const logger = new Logger();
+    configureTelegram(env.TELEGRAM_BOT_URL);
 
     try {
-      await processAppleDocuments(env, logger);
+      await processAppleDocuments(env);
     } catch (error) {
       await logger.error(
         `Worker execution failed: ${error instanceof Error ? error.message : String(error)}`
@@ -55,11 +58,10 @@ export default {
     }
 
     if (url.pathname === "/trigger" && request.method === "POST") {
-      setupTelegram(env.TELEGRAM_BOT_URL);
-      const logger = new Logger();
+      configureTelegram(env.TELEGRAM_BOT_URL);
 
       try {
-        await processAppleDocuments(env, logger);
+        await processAppleDocuments(env);
         return new Response("Processing completed", { status: 200 });
       } catch (error) {
         await logger.error(
@@ -73,7 +75,7 @@ export default {
   },
 };
 
-async function processAppleDocuments(env: Env, logger: Logger): Promise<void> {
+async function processAppleDocuments(env: Env): Promise<void> {
   const config: BatchConfig = {
     batchSize: parseInt(env.BATCH_SIZE || "30"),
     forceUpdateAll: env.FORCE_UPDATE_ALL === "true",
@@ -95,9 +97,7 @@ async function processAppleDocuments(env: Env, logger: Logger): Promise<void> {
     connect_timeout: 10,
   });
 
-  const dbManager = new PostgreSQLManager(sql, logger);
-
-  // Telegram notifications already set up globally
+  const dbManager = new PostgreSQLManager(sql);
 
   // Create KeyManager with D1 database
   let keyManager: any;
@@ -112,14 +112,7 @@ async function processAppleDocuments(env: Env, logger: Logger): Promise<void> {
     throw error;
   }
 
-  const collector = new AppleDocCollector(
-    dbManager,
-    keyManager,
-    logger,
-    config,
-    env,
-    undefined // No longer needed - using global telegram
-  );
+  const collector = new AppleDocCollector(dbManager, keyManager, config, env);
 
   const batchCount = parseInt(env.BATCH_COUNT || "30");
 
@@ -161,8 +154,8 @@ async function processAppleDocuments(env: Env, logger: Logger): Promise<void> {
   const now = new Date();
   const currentMinute = now.getMinutes();
 
-  // Only send notification if current time is within first 3 minutes of the hour (0, 1, or 2)
-  if (currentMinute < 3) {
+  // Only send notification if current time is within first XX minutes of the hour (0, 1, or 2)
+  if (currentMinute < 12) {
     try {
       const finalStats = await dbManager.getStats();
       const statsMessage =
@@ -188,18 +181,12 @@ async function processAppleDocuments(env: Env, logger: Logger): Promise<void> {
         `• Force update: ${config.forceUpdateAll ? "Yes" : "No"}`;
 
       logger.info(statsMessage);
-      logger.info(
-        `Telegram notification sent (minute ${currentMinute} of hour)`
-      );
+      await notifyTelegram(statsMessage);
     } catch (error) {
       await logger.error(
         `Failed to get final stats: ${error instanceof Error ? error.message : String(error)}`
       );
     }
-  } else {
-    logger.info(
-      `Telegram notification skipped (minute ${currentMinute} of hour, only send in minutes 0-2)`
-    );
   }
 
   // Close database connection
