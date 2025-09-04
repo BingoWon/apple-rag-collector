@@ -92,10 +92,19 @@ async function processAppleDocuments(env: Env): Promise<void> {
     username: env.DB_USER,
     password: env.DB_PASSWORD || "",
     ssl: env.DB_SSL === "true",
-    max: 1, // Required for Cloudflare Workers to support transactions
-    idle_timeout: 20,
-    connect_timeout: 10,
+    max: 3, // Increased from 1 to reduce connection bottleneck
+    idle_timeout: 30, // Increased from 20 to 30 seconds
+    connect_timeout: 15, // Increased from 10 to 15 seconds
+    transform: {
+      undefined: null,
+    },
+    onnotice: () => {}, // Suppress PostgreSQL notices
   });
+
+  // Configure PostgreSQL session-level timeouts to prevent lock timeouts
+  await sql`SET statement_timeout = '120s'`; // 120 second statement timeout
+  await sql`SET lock_timeout = '60s'`; // 60 second lock timeout to prevent "canceling statement due to lock timeout"
+  await sql`SET idle_in_transaction_session_timeout = '180s'`; // 3 minute idle transaction timeout
 
   const dbManager = new PostgreSQLManager(sql);
 
@@ -155,7 +164,7 @@ async function processAppleDocuments(env: Env): Promise<void> {
   const currentMinute = now.getMinutes();
 
   // Only send notification if current time is within first XX minutes of the hour (0, 1, or 2)
-  if (currentMinute < 12) {
+  if (currentMinute < 4) {
     try {
       const finalStats = await dbManager.getStats();
       const statsMessage =

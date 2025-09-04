@@ -20,7 +20,7 @@ const TIMESTAMP =
 const SESSION_DIR = path.join(OUTPUT_DIR, TIMESTAMP);
 
 // Test URL
-const TEST_URL = " ttps://developer.apple.com/documentation/avkit";
+const TEST_URL = "https://developer.apple.com/documentation/xcode/formatting-your-documentation-content";
 
 // Ensure output directory exists
 if (!fs.existsSync(OUTPUT_DIR)) {

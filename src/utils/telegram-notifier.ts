@@ -8,10 +8,11 @@ async function notifyTelegram(message: string): Promise<void> {
   if (!telegramUrl) return;
 
   try {
+    const prefixedMessage = `[COLLECTOR] ${message}`;
     const response = await fetch(telegramUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: message }),
+      body: JSON.stringify({ text: prefixedMessage }),
       signal: AbortSignal.timeout(5000),
     });
 
