@@ -5,9 +5,9 @@ name = "your-apple-rag-collector"
 main = "dist/worker.js"
 compatibility_date = "2024-12-01"
 
-# Cron trigger - runs every 53 minutes
+# Cron trigger - runs every 5 minutes
 [[triggers]]
-schedule = "*/53 * * * *"
+schedule = "*/5 * * * *"
 
 # D1 Database binding (optional - for API key management)
 # Create your own D1 database and replace with your database name
@@ -41,7 +41,7 @@ DB_SSL = "true"  # Set to "false" for local development
 # BATCH_COUNT = "15"   # 15 batches total
 # Total: 60 × 15 = 900 requests (safely under 1000 limit)
 
-# Current configuration (optimized for 53-minute intervals)
+# Current configuration (optimized for 5-minute intervals)
 # BATCH_SIZE: Number of URLs processed in each batch (每个批次处理的URL数量)
 BATCH_SIZE = "60"
 # BATCH_COUNT: Total number of batches to process (总共处理的批次数量)
@@ -65,6 +65,16 @@ TELEGRAM_BOT_URL = "https://api.telegram.org/bot{YOUR_BOT_TOKEN}/sendMessage?cha
 # Build Configuration
 [build]
 command = "pnpm build"
+
+# Cloudflare Workers Logs Configuration
+[observability]
+enabled = true
+head_sampling_rate = 1  # 100% sampling rate for all requests
+
+# Smart Placement Configuration
+# Automatically places Worker closer to your database for better performance
+[placement]
+mode = "smart"
 
 # Development Configuration
 [env.development.vars]

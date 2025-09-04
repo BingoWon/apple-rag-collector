@@ -70,13 +70,13 @@ class UrlProcessor {
     };
 
     const validUrls = urls.filter(isValidUrl);
-    const filteredCount = urls.length - validUrls.length;
+    // const filteredCount = urls.length - validUrls.length;
 
-    if (filteredCount > 0) {
-      console.info(
-        `Filtered ${filteredCount} malformed URLs from ${urls.length} total`
-      );
-    }
+    // if (filteredCount > 0) {
+    //   console.info(
+    //     `Filtered ${filteredCount} malformed URLs from ${urls.length} total`
+    //   );
+    // }
 
     return validUrls;
   }

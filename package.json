@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "deploy": "wrangler deploy",
+    "deploy:cf": "wrangler deploy",
     "logs": "wrangler tail",
     "fmt": "biome format --write ."
   },
