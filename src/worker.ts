@@ -164,7 +164,7 @@ async function processAppleDocuments(env: Env): Promise<void> {
   const currentMinute = now.getMinutes();
 
   // Only send notification if current time is within first XX minutes of the hour (0, 1, or 2)
-  if (currentMinute < 4) {
+  if (currentMinute < 12) {
     try {
       const finalStats = await dbManager.getStats();
       const statsMessage =

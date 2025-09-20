@@ -255,6 +255,8 @@ class AppleDocCollector {
           title: item.chunk.title,
           content: item.chunk.content,
           embedding: embeddings[index] || [],
+          chunk_index: item.chunk.chunk_index,
+          total_chunks: item.chunk.total_chunks,
         }));
         await this.dbManager.insertChunks(chunksWithEmbeddings);
       }
@@ -330,7 +332,7 @@ class AppleDocCollector {
   private async generateChunksAndEmbeddings(processResults: any[]): Promise<{
     allChunks: Array<{
       url: string;
-      chunk: { title: string | null; content: string };
+      chunk: { title: string | null; content: string; chunk_index: number; total_chunks: number };
     }>;
     embeddings: number[][];
   }> {
@@ -372,7 +374,7 @@ class AppleDocCollector {
     processResults: any[],
     allChunks: Array<{
       url: string;
-      chunk: { title: string | null; content: string };
+      chunk: { title: string | null; content: string; chunk_index: number; total_chunks: number };
     }>
   ): ProcessBatchResult {
     const successRecords: DatabaseRecord[] = [];

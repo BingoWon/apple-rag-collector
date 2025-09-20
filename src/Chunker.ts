@@ -57,7 +57,7 @@ export class Chunker {
   constructor(private readonly config: BatchConfig) {}
 
   /**
-   * Batch chunking framework with title support
+   * Batch chunking framework with title support and chunk indexing
    */
   chunkTexts(
     contentResults: Array<{
@@ -65,9 +65,9 @@ export class Chunker {
       title: string | null;
       content: string;
     }>
-  ): BatchResult<Array<{ title: string | null; content: string }>>[] {
+  ): BatchResult<Array<{ title: string | null; content: string; chunk_index: number; total_chunks: number }>>[] {
     const results: BatchResult<
-      Array<{ title: string | null; content: string }>
+      Array<{ title: string | null; content: string; chunk_index: number; total_chunks: number }>
     >[] = [];
 
     for (let i = 0; i < contentResults.length; i += this.config.batchSize) {
@@ -83,7 +83,7 @@ export class Chunker {
     url: string;
     title: string | null;
     content: string;
-  }): BatchResult<Array<{ title: string | null; content: string }>> {
+  }): BatchResult<Array<{ title: string | null; content: string; chunk_index: number; total_chunks: number }>> {
     try {
       // Use title as context for all chunks
       const chunks = this.chunkText(item.content, item.title || "");
@@ -94,27 +94,27 @@ export class Chunker {
   }
 
   /**
-   * Smart chunking main entry - Dynamic adaptive strategy
+   * Smart chunking main entry - Dynamic adaptive strategy with indexing
    */
   chunkText(
     text: string,
     title: string = ""
-  ): Array<{ title: string | null; content: string }> {
+  ): Array<{ title: string | null; content: string; chunk_index: number; total_chunks: number }> {
     if (!text.trim()) {
       return [];
     }
 
-    // Execute dynamic adaptive splitting with title
+    // Execute dynamic adaptive splitting with title and indexing
     return this._adaptiveSplit(text, title);
   }
 
   /**
-   * Dynamic adaptive splitting strategy - Combine dynamic calculation and smart split points
+   * Dynamic adaptive splitting strategy with chunk indexing
    */
   private _adaptiveSplit(
     content: string,
     title: string
-  ): Array<{ title: string | null; content: string }> {
+  ): Array<{ title: string | null; content: string; chunk_index: number; total_chunks: number }> {
     // Use Math.round for target chunk count to achieve more balanced distribution
     // e.g., 4900 length → round(4900/2500) = 2 chunks instead of 1
     const targetChunkCount = Math.max(
@@ -122,7 +122,7 @@ export class Chunker {
       Math.round(content.length / Chunker.TARGET_CHUNK_SIZE)
     );
 
-    const chunks: Array<{ title: string | null; content: string }> = [];
+    const chunks: Array<{ title: string | null; content: string; chunk_index: number; total_chunks: number }> = [];
     let start = 0;
 
     for (
@@ -134,7 +134,7 @@ export class Chunker {
         // Last chunk: include all remaining content
         const chunkContent = content.slice(start);
         if (chunkContent.trim()) {
-          chunks.push(this._createChunkJson(title, chunkContent));
+          chunks.push(this._createChunkJson(title, chunkContent, currentChunkNum - 1, targetChunkCount));
         }
         break;
       }
@@ -148,9 +148,9 @@ export class Chunker {
       // Find best split point
       const splitPos = this._findBestSplit(content, targetPos);
 
-      // Create chunk
+      // Create chunk with index (0-based)
       const chunkContent = content.slice(start, splitPos);
-      chunks.push(this._createChunkJson(title, chunkContent));
+      chunks.push(this._createChunkJson(title, chunkContent, currentChunkNum - 1, targetChunkCount));
       start = splitPos;
     }
 
@@ -181,15 +181,19 @@ export class Chunker {
   }
 
   /**
-   * Create chunk object with title and content
+   * Create chunk object with title, content, and indexing information
    */
   private _createChunkJson(
     title: string,
-    content: string
-  ): { title: string | null; content: string } {
+    content: string,
+    chunkIndex: number,
+    totalChunks: number
+  ): { title: string | null; content: string; chunk_index: number; total_chunks: number } {
     return {
       title: title || null,
       content: content.trim(),
+      chunk_index: chunkIndex,
+      total_chunks: totalChunks,
     };
   }
 }

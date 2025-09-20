@@ -35,11 +35,14 @@
 | content | text | not null | |
 | created_at | timestamp with time zone | not null | now() |
 | embedding | halfvec(2560) | nullable | |
+| chunk_index | integer | not null | 0 |
+| total_chunks | integer | not null | 1 |
 
 **Indexes:**
 - `chunks_pkey` PRIMARY KEY, btree (id)
 - `idx_chunks_created_at` btree (created_at)
 - `idx_chunks_embedding_hnsw` hnsw (embedding halfvec_cosine_ops) WITH (m='16', ef_construction='64')
-- `idx_chunks_url` btree (url)
+- `idx_chunks_fulltext` gin (to_tsvector('simple'::regconfig, (COALESCE(title, ''::text) || ' '::text) || content))
 - `idx_chunks_title` btree (title)
+- `idx_chunks_url` btree (url)
 

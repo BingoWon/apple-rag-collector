@@ -54,6 +54,8 @@ interface ChunkRecord {
   readonly content: string;
   readonly created_at: Date;
   readonly embedding: number[] | null;
+  readonly chunk_index: number;
+  readonly total_chunks: number;
 }
 
 // Batch result interface - simplified to core types

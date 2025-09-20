@@ -34,21 +34,27 @@ class PostgreSQLManager {
   }
 
   async getBatchRecords(batchSize: number): Promise<DatabaseRecord[]> {
-    // Atomic operation: SELECT and LOCK records using UPDATE-RETURNING pattern
-    // This prevents race conditions between multiple workers without adding new fields
+    // Atomic operation: SELECT records with minimum collect_count and UPDATE them
+    // This ensures different workers get different records by always taking the minimum collect_count
     const result = await this.sql`
-      UPDATE pages
-      SET collect_count = collect_count + 1
-      WHERE id IN (
+      WITH min_count_records AS (
         SELECT id FROM pages
         WHERE url LIKE 'https://developer.apple.com/%'
+          AND collect_count = (
+            SELECT MIN(collect_count)
+            FROM pages
+            WHERE url LIKE 'https://developer.apple.com/%'
+          )
         ORDER BY
-          collect_count ASC,
           CASE WHEN content IS NULL OR content = '' THEN 0 ELSE 1 END ASC,
-          CASE WHEN title IS NULL OR title = '' THEN 0 ELSE 1 END ASC
+          CASE WHEN title IS NULL OR title = '' THEN 0 ELSE 1 END ASC,
+          url ASC
         LIMIT ${batchSize}
         FOR UPDATE SKIP LOCKED
       )
+      UPDATE pages
+      SET collect_count = collect_count + 1
+      WHERE id IN (SELECT id FROM min_count_records)
       RETURNING *
     `;
 
@@ -213,6 +219,8 @@ class PostgreSQLManager {
       title: string | null;
       content: string;
       embedding: number[];
+      chunk_index: number;
+      total_chunks: number;
     }>
   ): Promise<void> {
     if (chunks.length === 0) return;
@@ -231,8 +239,8 @@ class PostgreSQLManager {
 
       for (const chunk of chunks) {
         await sql`
-          INSERT INTO chunks (url, title, content, embedding)
-          VALUES (${chunk.url}, ${chunk.title}, ${chunk.content}, ${`[${chunk.embedding.join(",")}]`})
+          INSERT INTO chunks (url, title, content, embedding, chunk_index, total_chunks)
+          VALUES (${chunk.url}, ${chunk.title}, ${chunk.content}, ${`[${chunk.embedding.join(",")}]`}, ${chunk.chunk_index}, ${chunk.total_chunks})
         `;
       }
     });
@@ -240,10 +248,10 @@ class PostgreSQLManager {
 
   async getChunksByUrl(url: string): Promise<ChunkRecord[]> {
     const result = await this.sql`
-      SELECT id, url, title, content, created_at, embedding
+      SELECT id, url, title, content, created_at, embedding, chunk_index, total_chunks
       FROM chunks
       WHERE url = ${url}
-      ORDER BY created_at
+      ORDER BY chunk_index
     `;
 
     return result.map((row: any) => ({
@@ -253,6 +261,8 @@ class PostgreSQLManager {
       content: row.content,
       created_at: row.created_at,
       embedding: row.embedding ? Array.from(row.embedding) : null,
+      chunk_index: row.chunk_index,
+      total_chunks: row.total_chunks,
     }));
   }
 
