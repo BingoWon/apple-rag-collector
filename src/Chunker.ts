@@ -65,9 +65,21 @@ export class Chunker {
       title: string | null;
       content: string;
     }>
-  ): BatchResult<Array<{ title: string | null; content: string; chunk_index: number; total_chunks: number }>>[] {
+  ): BatchResult<
+    Array<{
+      title: string | null;
+      content: string;
+      chunk_index: number;
+      total_chunks: number;
+    }>
+  >[] {
     const results: BatchResult<
-      Array<{ title: string | null; content: string; chunk_index: number; total_chunks: number }>
+      Array<{
+        title: string | null;
+        content: string;
+        chunk_index: number;
+        total_chunks: number;
+      }>
     >[] = [];
 
     for (let i = 0; i < contentResults.length; i += this.config.batchSize) {
@@ -83,7 +95,14 @@ export class Chunker {
     url: string;
     title: string | null;
     content: string;
-  }): BatchResult<Array<{ title: string | null; content: string; chunk_index: number; total_chunks: number }>> {
+  }): BatchResult<
+    Array<{
+      title: string | null;
+      content: string;
+      chunk_index: number;
+      total_chunks: number;
+    }>
+  > {
     try {
       // Use title as context for all chunks
       const chunks = this.chunkText(item.content, item.title || "");
@@ -99,7 +118,12 @@ export class Chunker {
   chunkText(
     text: string,
     title: string = ""
-  ): Array<{ title: string | null; content: string; chunk_index: number; total_chunks: number }> {
+  ): Array<{
+    title: string | null;
+    content: string;
+    chunk_index: number;
+    total_chunks: number;
+  }> {
     if (!text.trim()) {
       return [];
     }
@@ -114,7 +138,12 @@ export class Chunker {
   private _adaptiveSplit(
     content: string,
     title: string
-  ): Array<{ title: string | null; content: string; chunk_index: number; total_chunks: number }> {
+  ): Array<{
+    title: string | null;
+    content: string;
+    chunk_index: number;
+    total_chunks: number;
+  }> {
     // Use Math.round for target chunk count to achieve more balanced distribution
     // e.g., 4900 length → round(4900/2500) = 2 chunks instead of 1
     const targetChunkCount = Math.max(
@@ -122,7 +151,12 @@ export class Chunker {
       Math.round(content.length / Chunker.TARGET_CHUNK_SIZE)
     );
 
-    const chunks: Array<{ title: string | null; content: string; chunk_index: number; total_chunks: number }> = [];
+    const chunks: Array<{
+      title: string | null;
+      content: string;
+      chunk_index: number;
+      total_chunks: number;
+    }> = [];
     let start = 0;
 
     for (
@@ -134,7 +168,14 @@ export class Chunker {
         // Last chunk: include all remaining content
         const chunkContent = content.slice(start);
         if (chunkContent.trim()) {
-          chunks.push(this._createChunkJson(title, chunkContent, currentChunkNum - 1, targetChunkCount));
+          chunks.push(
+            this._createChunkJson(
+              title,
+              chunkContent,
+              currentChunkNum - 1,
+              targetChunkCount
+            )
+          );
         }
         break;
       }
@@ -150,7 +191,14 @@ export class Chunker {
 
       // Create chunk with index (0-based)
       const chunkContent = content.slice(start, splitPos);
-      chunks.push(this._createChunkJson(title, chunkContent, currentChunkNum - 1, targetChunkCount));
+      chunks.push(
+        this._createChunkJson(
+          title,
+          chunkContent,
+          currentChunkNum - 1,
+          targetChunkCount
+        )
+      );
       start = splitPos;
     }
 
@@ -188,7 +236,12 @@ export class Chunker {
     content: string,
     chunkIndex: number,
     totalChunks: number
-  ): { title: string | null; content: string; chunk_index: number; total_chunks: number } {
+  ): {
+    title: string | null;
+    content: string;
+    chunk_index: number;
+    total_chunks: number;
+  } {
     return {
       title: title || null,
       content: content.trim(),

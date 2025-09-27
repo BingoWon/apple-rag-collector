@@ -58,7 +58,10 @@ class AppleAPIClient {
       const path = urlObj.pathname.replace(/\/$/, "");
 
       // Special case for specific URL that needs swift.org endpoint
-      if (url === "https://developer.apple.com/documentation/xcode/formatting-your-documentation-content") {
+      if (
+        url ===
+        "https://developer.apple.com/documentation/xcode/formatting-your-documentation-content"
+      ) {
         // Convert to docc path for swift.org endpoint
         const doccPath = path.replace(/^\/documentation\/xcode/, "/docc");
         return `${AppleAPIClient.API_ENDPOINTS.docc}${doccPath}.json`;
