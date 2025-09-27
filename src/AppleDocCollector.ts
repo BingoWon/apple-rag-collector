@@ -7,6 +7,7 @@ import { PostgreSQLManager } from "./PostgreSQLManager.js";
 import { type DatabaseRecord, type BatchConfig } from "./types/index.js";
 import { logger } from "./utils/logger.js";
 import { BatchErrorHandler } from "./utils/batch-error-handler.js";
+import { notifyTelegram } from "./utils/telegram-notifier.js";
 
 interface ProcessBatchResult {
   successRecords: DatabaseRecord[];
@@ -249,6 +250,13 @@ class AppleDocCollector {
         `📝 Content changed: ${changedRecords.length} URLs (full processing)`
       );
 
+      // Send notification when content changes are detected (only when not in force update mode)
+      if (!this.config.forceUpdateAll) {
+        const changedUrls = changedRecords.map((r) => r.record.url).join("\n");
+        const message = `📝 Content updated: ${changedRecords.length} URLs changed\n\nUpdated URLs:\n${changedUrls}`;
+        await notifyTelegram(message);
+      }
+
       if (allChunks.length > 0) {
         const chunksWithEmbeddings = allChunks.map((item, index) => ({
           url: item.url,
@@ -332,7 +340,12 @@ class AppleDocCollector {
   private async generateChunksAndEmbeddings(processResults: any[]): Promise<{
     allChunks: Array<{
       url: string;
-      chunk: { title: string | null; content: string; chunk_index: number; total_chunks: number };
+      chunk: {
+        title: string | null;
+        content: string;
+        chunk_index: number;
+        total_chunks: number;
+      };
     }>;
     embeddings: number[][];
   }> {
@@ -374,7 +387,12 @@ class AppleDocCollector {
     processResults: any[],
     allChunks: Array<{
       url: string;
-      chunk: { title: string | null; content: string; chunk_index: number; total_chunks: number };
+      chunk: {
+        title: string | null;
+        content: string;
+        chunk_index: number;
+        total_chunks: number;
+      };
     }>
   ): ProcessBatchResult {
     const successRecords: DatabaseRecord[] = [];
