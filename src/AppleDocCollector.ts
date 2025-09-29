@@ -22,6 +22,7 @@ interface ProcessingPlanItem {
   collectResult: any;
   hasChanged: boolean;
   newRawJson?: string;
+  processResult?: any;
   error?: string;
   isPermanentError?: boolean;
 }
@@ -122,7 +123,7 @@ class AppleDocCollector {
     return await this.executeProcessingPlan(processingPlan);
   }
 
-  // Unified and simplified processing plan creation
+  // Optimized processing plan creation - process first, then compare
   private async createProcessingPlan(
     records: DatabaseRecord[],
     collectResults: any[]
@@ -131,17 +132,19 @@ class AppleDocCollector {
       logger.info(`🔄 Force Update: Processing all ${records.length} URLs`);
     }
 
-    const planItems = await Promise.all(
-      records.map(async (record, index) => {
-        const collectResult = collectResults[index];
+    // Process all successful results first
+    const processResults = await this.contentProcessor.processDocuments(collectResults);
 
-        if (!collectResult.data) {
-          return this.createErrorPlanItem(record, collectResult);
-        }
+    const planItems = records.map((record, index) => {
+      const collectResult = collectResults[index];
+      const processResult = processResults[index];
 
-        return await this.createSuccessPlanItem(record, collectResult);
-      })
-    );
+      if (!collectResult.data) {
+        return this.createErrorPlanItem(record, collectResult);
+      }
+
+      return this.createSuccessPlanItem(record, collectResult, processResult);
+    });
 
     return planItems;
   }
@@ -162,34 +165,39 @@ class AppleDocCollector {
     };
   }
 
-  private async createSuccessPlanItem(
+  private createSuccessPlanItem(
     record: DatabaseRecord,
-    collectResult: any
-  ): Promise<ProcessingPlanItem> {
+    collectResult: any,
+    processResult: any
+  ): ProcessingPlanItem {
     const newRawJson = JSON.stringify(collectResult.data);
-    const comparison = this.compareContent(record, collectResult.data);
+    const comparison = this.compareContent(record, processResult);
 
-    // Log differences for debugging (now async)
-    await this.logContentChanges(record.url, comparison);
+    // Log differences for debugging
+    this.logContentChanges(record.url, comparison);
 
     return {
       record,
       collectResult,
       hasChanged: comparison.hasChanged,
       newRawJson,
+      processResult, // Add processed result to plan item
     };
   }
 
-  // Optimized content comparison - focus on actual content changes
-  private compareContent(oldRecord: DatabaseRecord, newData: any): ComparisonResult {
+  // Optimized content comparison - based on processed results
+  private compareContent(oldRecord: DatabaseRecord, processResult: any): ComparisonResult {
     if (this.config.forceUpdateAll) {
       return { hasChanged: true };
     }
 
-    // Extract new content using ContentProcessor logic
-    const { titles, content } = this.contentProcessor.cleanAndSeparateContent(newData);
-    const newTitle = titles.trim() || null;
-    const newContent = this.contentProcessor.normalizeLineTerminators(content);
+    // Compare with already processed content (no duplicate processing)
+    if (!processResult?.data) {
+      return { hasChanged: false };
+    }
+
+    const newTitle = processResult.data.title;
+    const newContent = processResult.data.content;
 
     // Compare actual content fields
     const titleChanged = oldRecord.title !== newTitle;
@@ -214,10 +222,10 @@ class AppleDocCollector {
 
 
 
-  private async logContentChanges(
+  private logContentChanges(
     url: string,
     comparison: ComparisonResult
-  ): Promise<void> {
+  ): void {
     if (
       comparison.hasChanged &&
       !this.config.forceUpdateAll &&
@@ -252,13 +260,8 @@ class AppleDocCollector {
     );
     const errorRecords = processingPlan.filter((r) => r.error);
 
-    // Process changed content
-    const processResults =
-      changedRecords.length > 0
-        ? await this.contentProcessor.processDocuments(
-            changedRecords.map((r) => r.collectResult)
-          )
-        : [];
+    // Use already processed results (no duplicate processing)
+    const processResults = changedRecords.map((r) => r.processResult).filter(Boolean);
 
     const { allChunks, embeddings } =
       await this.generateChunksAndEmbeddings(processResults);
@@ -291,18 +294,13 @@ class AppleDocCollector {
       // Update changed records with full content and updated_at
       // Note: collect_count already incremented in getBatchRecords() and doesn't need updating
       await this.dbManager.batchUpdateFullRecords(
-        changedRecords.map((r, index) => {
-          const processResult = processResults[index];
+        changedRecords.map((r) => {
           return {
             ...r.record,
             updated_at: new Date(),
             raw_json: r.newRawJson || JSON.stringify(r.collectResult.data),
-            title:
-              processResult?.data?.title ||
-              r.collectResult.data?.metadata?.title ||
-              r.collectResult.data?.title ||
-              null,
-            content: processResult?.data?.content || "",
+            title: r.processResult?.data?.title || null,
+            content: r.processResult?.data?.content || "",
           };
         })
       );
@@ -454,11 +452,6 @@ class AppleDocCollector {
       totalChunks: allChunks.length,
     };
   }
-
-
-
-
-
 }
 
 export { AppleDocCollector };
