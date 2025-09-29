@@ -5,6 +5,7 @@ import {
 } from "./types/index.js";
 import { BatchErrorHandler } from "./utils/batch-error-handler.js";
 import { UrlProcessor } from "./utils/url-processor.js";
+import { notifyTelegram } from "./utils/telegram-notifier.js";
 
 class ContentProcessor {
   private urlProcessor = new UrlProcessor();
@@ -29,12 +30,17 @@ class ContentProcessor {
     }
 
     return BatchErrorHandler.safeExecute(item.url, () => {
-      const { titles, content } = this.cleanAndSeparateContent(item.data!);
+      const documentTitle = item.data!.metadata?.title || 'untitled';
+      const context = { url: item.url, title: documentTitle };
+
+      const { titles, content } = this.cleanAndSeparateContent(item.data!, context);
       const extractedUrls = this.urlProcessor.extractAllUrls(item.data!);
 
+      const finalTitle = titles.trim() || null;
+
       const documentContent: DocumentContent = {
-        title: titles.trim() || null,
-        content: this.normalizeLineTerminators(content),
+        title: finalTitle,
+        content: this.normalizeLineTerminators(content, { url: item.url, title: finalTitle || 'untitled' }),
         extractedUrls,
       };
 
@@ -42,12 +48,12 @@ class ContentProcessor {
     });
   }
 
-  private cleanAndSeparateContent(docData: AppleAPIResponse): {
+  private cleanAndSeparateContent(docData: AppleAPIResponse, context?: { url?: string; title?: string }): {
     titles: string;
     content: string;
   } {
     const titles = this.extractTitleContent(docData);
-    const content = this.extractMainContent(docData);
+    const content = this.extractMainContent(docData, context);
     return { titles, content };
   }
 
@@ -132,7 +138,7 @@ class ContentProcessor {
     return `${platform.name}${version ? " " + version : ""}${beta}`;
   }
 
-  private extractMainContent(docData: AppleAPIResponse): string {
+  private extractMainContent(docData: AppleAPIResponse, context?: { url?: string; title?: string }): string {
     if (!docData.primaryContentSections?.length) return "";
 
     const sections = docData.primaryContentSections
@@ -149,7 +155,7 @@ class ContentProcessor {
     // Join sections with exactly one empty line between them
     const content = sections.join("\n\n");
 
-    return this.normalizeLineTerminators(content);
+    return this.normalizeLineTerminators(content, context);
   }
 
   private convertContentSectionToMarkdown(
@@ -288,21 +294,22 @@ class ContentProcessor {
     );
   }
 
-  private cleanContent(content: string): string {
-    return this.normalizeLineTerminators(content)
+  private cleanContent(content: string, context?: { url?: string; title?: string }): string {
+    return this.normalizeLineTerminators(content, context)
       .replace(/^#+\s*/, "")
       .replace(/\n+$/, "");
   }
 
   private renderInlineContent(
     inline: any,
-    references: Record<string, any>
+    references: Record<string, any>,
+    context?: { url?: string; title?: string }
   ): string {
     const handlers: Record<string, () => string> = {
-      text: () => this.normalizeLineTerminators(inline.text || ""),
+      text: () => this.normalizeLineTerminators(inline.text || "", context),
       reference: () => this.renderReference(inline, references),
       codeVoice: () =>
-        inline.code ? `\`${this.normalizeLineTerminators(inline.code)}\`` : "",
+        inline.code ? `\`${this.normalizeLineTerminators(inline.code, context)}\`` : "",
       image: () => this.renderMedia(inline, "Image"),
       video: () => this.renderMedia(inline, "Video"),
     };
@@ -875,7 +882,32 @@ class ContentProcessor {
     return { title: section.title || "", content };
   }
 
-  private normalizeLineTerminators(text: string): string {
+  private normalizeLineTerminators(text: string, context?: { url?: string; title?: string }): string {
+    // Type safety check with detailed error reporting
+    if (typeof text !== 'string') {
+      const errorDetails = {
+        actualType: typeof text,
+        actualValue: text,
+        url: context?.url || 'unknown',
+        title: context?.title || 'unknown'
+      };
+
+      // Send detailed Telegram notification (fire and forget)
+      notifyTelegram(
+        `🚨 ContentProcessor Type Error Detected!\n\n` +
+        `**Error**: content is not a string\n` +
+        `**URL**: ${errorDetails.url}\n` +
+        `**Title**: ${errorDetails.title}\n` +
+        `**Expected Type**: string\n` +
+        `**Actual Type**: ${errorDetails.actualType}\n` +
+        `**Actual Value**: ${JSON.stringify(errorDetails.actualValue)}\n\n` +
+        `This error was caught and handled gracefully.`
+      ).catch(err => console.error('Failed to send Telegram notification:', err));
+
+      // Return safe fallback
+      return String(text || '');
+    }
+
     return text.replace(/[\u2028\u2029]/g, "\n");
   }
 }
