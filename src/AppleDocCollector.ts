@@ -29,6 +29,8 @@ interface ProcessingPlanItem {
 interface ComparisonResult {
   hasChanged: boolean;
   difference?: string;
+  oldContent?: string | null;
+  newContent?: string;
 }
 
 class AppleDocCollector {
@@ -191,7 +193,12 @@ class AppleDocCollector {
       const oldJsonStr = this.normalizeRawJson(oldRawJson);
       const newJsonStr = JSON.stringify(newData);
       const difference = this.findFirstJsonDifference(oldJsonStr, newJsonStr);
-      return { hasChanged, difference };
+      return {
+        hasChanged,
+        difference,
+        oldContent: oldJsonStr,
+        newContent: newJsonStr,
+      };
     }
 
     return { hasChanged: false };
@@ -217,8 +224,21 @@ class AppleDocCollector {
       !this.config.forceUpdateAll &&
       comparison.difference
     ) {
-      const message = `📝 Content change detected for ${url}:\n${comparison.difference}`;
-      logger.info(message);
+      // Consolidated debug output in a single log entry
+      const consolidatedMessage = [
+        `📝 Content change detected for ${url}:`,
+        `${comparison.difference}`,
+        ``,
+        `🔍 DEBUG - Complete content comparison:`,
+        `📄 OLD CONTENT:`,
+        `${comparison.oldContent || "null"}`,
+        ``,
+        `📄 NEW CONTENT:`,
+        `${comparison.newContent || "null"}`,
+        `🔚 END DEBUG for ${url}`,
+      ].join("\n");
+
+      logger.info(consolidatedMessage);
     }
   }
 
