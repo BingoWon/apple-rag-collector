@@ -167,7 +167,7 @@ class AppleDocCollector {
     collectResult: any
   ): Promise<ProcessingPlanItem> {
     const newRawJson = JSON.stringify(collectResult.data);
-    const comparison = this.compareContent(record.raw_json, collectResult.data);
+    const comparison = this.compareContent(record, collectResult.data);
 
     // Log differences for debugging (now async)
     await this.logContentChanges(record.url, comparison);
@@ -180,40 +180,39 @@ class AppleDocCollector {
     };
   }
 
-  // Unified content comparison logic
-  private compareContent(oldRawJson: any, newData: any): ComparisonResult {
+  // Optimized content comparison - focus on actual content changes
+  private compareContent(oldRecord: DatabaseRecord, newData: any): ComparisonResult {
     if (this.config.forceUpdateAll) {
       return { hasChanged: true };
     }
 
-    const oldObj = this.parseRawJson(oldRawJson);
-    const hasChanged = !this.deepEqual(oldObj, newData);
+    // Extract new content using ContentProcessor logic
+    const { titles, content } = this.contentProcessor.cleanAndSeparateContent(newData);
+    const newTitle = titles.trim() || null;
+    const newContent = this.contentProcessor.normalizeLineTerminators(content);
+
+    // Compare actual content fields
+    const titleChanged = oldRecord.title !== newTitle;
+    const contentChanged = oldRecord.content !== newContent;
+    const hasChanged = titleChanged || contentChanged;
 
     if (hasChanged) {
-      const oldJsonStr = this.normalizeRawJson(oldRawJson);
-      const newJsonStr = JSON.stringify(newData);
-      const difference = this.findFirstJsonDifference(oldJsonStr, newJsonStr);
+      const changes = [];
+      if (titleChanged) changes.push(`Title: "${oldRecord.title}" → "${newTitle}"`);
+      if (contentChanged) changes.push(`Content: ${oldRecord.content.length} → ${newContent.length} chars`);
+
       return {
         hasChanged,
-        difference,
-        oldContent: oldJsonStr,
-        newContent: newJsonStr,
+        difference: changes.join(", "),
+        oldContent: `Title: ${oldRecord.title}\nContent: ${oldRecord.content.substring(0, 200)}...`,
+        newContent: `Title: ${newTitle}\nContent: ${newContent.substring(0, 200)}...`,
       };
     }
 
     return { hasChanged: false };
   }
 
-  // Unified data normalization methods
-  private parseRawJson(rawJson: any): any | null {
-    if (rawJson === null || rawJson === undefined) return null;
-    return typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
-  }
 
-  private normalizeRawJson(rawJson: any): string | null {
-    if (rawJson === null || rawJson === undefined) return null;
-    return typeof rawJson === "string" ? rawJson : JSON.stringify(rawJson);
-  }
 
   private async logContentChanges(
     url: string,
@@ -439,8 +438,8 @@ class AppleDocCollector {
         processIndex < processResults.length
       ) {
         const processResult = processResults[processIndex++];
-        if (processResult?.data?.urls) {
-          processResult.data.urls.forEach((url: string) =>
+        if (processResult?.data?.extractedUrls) {
+          processResult.data.extractedUrls.forEach((url: string) =>
             extractedUrls.add(url)
           );
         }
@@ -456,129 +455,10 @@ class AppleDocCollector {
     };
   }
 
-  // Simplified and unified difference detection
-  private findFirstJsonDifference(
-    oldJson: string | null,
-    newJson: string
-  ): string {
-    try {
-      const oldObj = oldJson ? JSON.parse(oldJson) : null;
-      const newObj = JSON.parse(newJson);
-      const difference = this.findObjectDifference(oldObj, newObj, "");
-      return difference || "No specific difference found (possibly formatting)";
-    } catch (error) {
-      return this.findStringDifference(oldJson, newJson);
-    }
-  }
 
-  private findObjectDifference(
-    oldObj: any,
-    newObj: any,
-    path: string
-  ): string | null {
-    if (oldObj === null && newObj === null) return null;
-    if (oldObj === null)
-      return `${path}: null → ${JSON.stringify(newObj).substring(0, 100)}...`;
-    if (newObj === null)
-      return `${path}: ${JSON.stringify(oldObj).substring(0, 100)}... → null`;
 
-    if (typeof oldObj !== "object" || typeof newObj !== "object") {
-      if (oldObj !== newObj) {
-        const oldStr = JSON.stringify(oldObj).substring(0, 50);
-        const newStr = JSON.stringify(newObj).substring(0, 50);
-        return `${path}: ${oldStr}... → ${newStr}...`;
-      }
-      return null;
-    }
 
-    if (Array.isArray(oldObj) && Array.isArray(newObj)) {
-      if (oldObj.length !== newObj.length) {
-        return `${path}: Array length ${oldObj.length} → ${newObj.length}`;
-      }
-      for (let i = 0; i < oldObj.length; i++) {
-        const diff = this.findObjectDifference(
-          oldObj[i],
-          newObj[i],
-          `${path}[${i}]`
-        );
-        if (diff) return diff;
-      }
-      return null;
-    }
 
-    const allKeys = new Set([...Object.keys(oldObj), ...Object.keys(newObj)]);
-    for (const key of allKeys) {
-      const currentPath = path ? `${path}.${key}` : key;
-
-      if (!(key in oldObj)) {
-        const newValue = JSON.stringify(newObj[key]).substring(0, 50);
-        return `${currentPath}: (new) → ${newValue}...`;
-      }
-      if (!(key in newObj)) {
-        const oldValue = JSON.stringify(oldObj[key]).substring(0, 50);
-        return `${currentPath}: ${oldValue}... → (deleted)`;
-      }
-
-      const diff = this.findObjectDifference(
-        oldObj[key],
-        newObj[key],
-        currentPath
-      );
-      if (diff) return diff;
-    }
-
-    return null;
-  }
-
-  private findStringDifference(oldStr: string | null, newStr: string): string {
-    if (!oldStr) return `Length difference: 0 → ${newStr.length}`;
-
-    const maxLength = Math.min(oldStr.length, newStr.length, 200);
-
-    for (let i = 0; i < maxLength; i++) {
-      if (oldStr[i] !== newStr[i]) {
-        const start = Math.max(0, i - 20);
-        const oldContext = oldStr.substring(start, i + 20);
-        const newContext = newStr.substring(start, i + 20);
-        return `Character difference at position ${i}:\nOld: ...${oldContext}...\nNew: ...${newContext}...`;
-      }
-    }
-
-    if (oldStr.length !== newStr.length) {
-      return `Length difference: ${oldStr.length} → ${newStr.length}`;
-    }
-
-    return "Strings appear identical in first 200 characters";
-  }
-
-  // Optimized deep equality check
-  private deepEqual(obj1: any, obj2: any): boolean {
-    if (obj1 === obj2) return true;
-    if (obj1 == null || obj2 == null) return obj1 === obj2;
-    if (typeof obj1 !== typeof obj2) return false;
-    if (typeof obj1 !== "object") return obj1 === obj2;
-    if (Array.isArray(obj1) !== Array.isArray(obj2)) return false;
-
-    if (Array.isArray(obj1)) {
-      if (obj1.length !== obj2.length) return false;
-      for (let i = 0; i < obj1.length; i++) {
-        if (!this.deepEqual(obj1[i], obj2[i])) return false;
-      }
-      return true;
-    }
-
-    const keys1 = Object.keys(obj1);
-    const keys2 = Object.keys(obj2);
-
-    if (keys1.length !== keys2.length) return false;
-
-    for (const key of keys1) {
-      if (!keys2.includes(key)) return false;
-      if (!this.deepEqual(obj1[key], obj2[key])) return false;
-    }
-
-    return true;
-  }
 }
 
 export { AppleDocCollector };

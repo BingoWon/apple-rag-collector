@@ -42,7 +42,7 @@ class ContentProcessor {
     });
   }
 
-  private cleanAndSeparateContent(docData: AppleAPIResponse): {
+  cleanAndSeparateContent(docData: AppleAPIResponse): {
     titles: string;
     content: string;
   } {
@@ -875,7 +875,7 @@ class ContentProcessor {
     return { title: section.title || "", content };
   }
 
-  private normalizeLineTerminators(text: string): string {
+  normalizeLineTerminators(text: string): string {
     return text.replace(/[\u2028\u2029]/g, "\n");
   }
 }
