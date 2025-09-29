@@ -4,7 +4,7 @@ import { Chunker } from "./Chunker.js";
 import { createEmbeddings } from "./EmbeddingProvider.js";
 import { KeyManager } from "./KeyManager.js";
 import { PostgreSQLManager } from "./PostgreSQLManager.js";
-import { type DatabaseRecord, type BatchConfig } from "./types/index.js";
+import { type DatabaseRecord, type BatchConfig, type BatchResult, type DocumentContent } from "./types/index.js";
 import { logger } from "./utils/logger.js";
 import { BatchErrorHandler } from "./utils/batch-error-handler.js";
 import { notifyTelegram } from "./utils/telegram-notifier.js";
@@ -19,10 +19,10 @@ interface ProcessBatchResult {
 
 interface ProcessingPlanItem {
   record: DatabaseRecord;
-  collectResult: any;
+  collectResult: BatchResult<any>;
   hasChanged: boolean;
   newRawJson?: string;
-  processResult?: any;
+  processResult?: BatchResult<DocumentContent> | undefined;
   error?: string;
   isPermanentError?: boolean;
 }
@@ -123,26 +123,44 @@ class AppleDocCollector {
     return await this.executeProcessingPlan(processingPlan);
   }
 
-  // Optimized processing plan creation - process first, then compare
+  // Optimized processing plan creation - process only valid data, then compare
   private async createProcessingPlan(
     records: DatabaseRecord[],
-    collectResults: any[]
+    collectResults: BatchResult<any>[]
   ): Promise<ProcessingPlanItem[]> {
     if (this.config.forceUpdateAll) {
       logger.info(`🔄 Force Update: Processing all ${records.length} URLs`);
     }
 
-    // Process all successful results first
-    const processResults = await this.contentProcessor.processDocuments(collectResults);
+    // Create index mapping for valid results only
+    const validIndices: number[] = [];
+    const validCollectResults = collectResults.filter((result, index) => {
+      if (result.data) {
+        validIndices.push(index);
+        return true;
+      }
+      return false;
+    });
+
+    // Process only valid results
+    const processResults = validCollectResults.length > 0
+      ? await this.contentProcessor.processDocuments(validCollectResults)
+      : [];
+
+    // Create result mapping
+    const processResultMap = new Map<number, any>();
+    validIndices.forEach((originalIndex, processIndex) => {
+      processResultMap.set(originalIndex, processResults[processIndex]);
+    });
 
     const planItems = records.map((record, index) => {
       const collectResult = collectResults[index];
-      const processResult = processResults[index];
 
-      if (!collectResult.data) {
-        return this.createErrorPlanItem(record, collectResult);
+      if (!collectResult || !collectResult.data) {
+        return this.createErrorPlanItem(record, collectResult || { url: record.url, data: null, error: "Missing collect result" });
       }
 
+      const processResult = processResultMap.get(index);
       return this.createSuccessPlanItem(record, collectResult, processResult);
     });
 
@@ -151,7 +169,7 @@ class AppleDocCollector {
 
   private createErrorPlanItem(
     record: DatabaseRecord,
-    collectResult: any
+    collectResult: BatchResult<any>
   ): ProcessingPlanItem {
     const isPermanent = BatchErrorHandler.isPermanentError(
       collectResult.error || ""
@@ -160,15 +178,15 @@ class AppleDocCollector {
       record,
       collectResult,
       hasChanged: false,
-      error: collectResult.error,
+      error: collectResult.error || "Unknown error",
       isPermanentError: isPermanent,
     };
   }
 
   private createSuccessPlanItem(
     record: DatabaseRecord,
-    collectResult: any,
-    processResult: any
+    collectResult: BatchResult<any>,
+    processResult?: BatchResult<DocumentContent>
   ): ProcessingPlanItem {
     const newRawJson = JSON.stringify(collectResult.data);
     const comparison = this.compareContent(record, processResult);
@@ -186,7 +204,7 @@ class AppleDocCollector {
   }
 
   // Optimized content comparison - based on processed results
-  private compareContent(oldRecord: DatabaseRecord, processResult: any): ComparisonResult {
+  private compareContent(oldRecord: DatabaseRecord, processResult?: BatchResult<DocumentContent>): ComparisonResult {
     if (this.config.forceUpdateAll) {
       return { hasChanged: true };
     }
