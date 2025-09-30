@@ -7,6 +7,21 @@ import { BatchErrorHandler } from "./utils/batch-error-handler.js";
 import { UrlProcessor } from "./utils/url-processor.js";
 import { notifyTelegram } from "./utils/telegram-notifier.js";
 
+/**
+ * ContentProcessor - Type Safety Strategy
+ *
+ * Two-tier type safety approach for optimal performance and reliability:
+ *
+ * 1. Critical Entry Points (processSingleDocument, extractMainContent):
+ *    - Use validateStringWithNotification() for type validation
+ *    - Sends detailed Telegram notifications on type errors
+ *    - Async to ensure notifications complete before errors propagate
+ *
+ * 2. Frequently Called Methods (cleanContent, renderInlineContent):
+ *    - Use toSafeString() for lightweight type conversion
+ *    - No notifications to avoid performance overhead
+ *    - Synchronous for efficiency
+ */
 class ContentProcessor {
   private urlProcessor = new UrlProcessor();
 
@@ -41,7 +56,7 @@ class ContentProcessor {
 
       const finalTitle = titles.trim() || null;
 
-      const safeContent = await this.ensureString(
+      const safeContent = await this.validateStringWithNotification(
         content,
         context,
         "processSingleDocument"
@@ -169,7 +184,7 @@ class ContentProcessor {
 
     // Join sections with exactly one empty line between them
     const content = sections.join("\n\n");
-    const safeContent = await this.ensureString(
+    const safeContent = await this.validateStringWithNotification(
       content,
       context,
       "extractMainContent"
@@ -315,9 +330,7 @@ class ContentProcessor {
   }
 
   private cleanContent(content: string): string {
-    // Synchronous type safety check without notification
-    const safeContent = typeof content === "string" ? content : String(content || "");
-
+    const safeContent = this.toSafeString(content);
     return this.normalizeLineTerminators(safeContent)
       .replace(/^#+\s*/, "")
       .replace(/\n+$/, "");
@@ -328,17 +341,11 @@ class ContentProcessor {
     references: Record<string, any>
   ): string {
     const handlers: Record<string, () => string> = {
-      text: () => {
-        // Synchronous fallback - type check without notification
-        const safeText = typeof inline.text === "string" ? inline.text : String(inline.text || "");
-        return this.normalizeLineTerminators(safeText);
-      },
+      text: () => this.normalizeLineTerminators(this.toSafeString(inline.text)),
       reference: () => this.renderReference(inline, references),
       codeVoice: () => {
         if (!inline.code) return "";
-        // Synchronous fallback - type check without notification
-        const safeCode = typeof inline.code === "string" ? inline.code : String(inline.code);
-        return `\`${this.normalizeLineTerminators(safeCode)}\``;
+        return `\`${this.normalizeLineTerminators(this.toSafeString(inline.code))}\``;
       },
       image: () => this.renderMedia(inline, "Image"),
       video: () => this.renderMedia(inline, "Video"),
@@ -913,11 +920,19 @@ class ContentProcessor {
   }
 
   /**
-   * Unified type safety check for all string operations
-   * Ensures input is a string and sends detailed error notifications if not
-   * IMPORTANT: This is async to ensure Telegram notifications are sent before errors propagate
+   * Lightweight synchronous type conversion for frequently called methods
+   * Converts any value to string without sending notifications
    */
-  private async ensureString(
+  private toSafeString(value: any): string {
+    return typeof value === "string" ? value : String(value || "");
+  }
+
+  /**
+   * Critical type validation with Telegram notification
+   * Used at main entry points to ensure type errors are reported
+   * Async to guarantee notification delivery before error propagation
+   */
+  private async validateStringWithNotification(
     value: any,
     context?: { url?: string; title?: string },
     methodName?: string
@@ -931,7 +946,6 @@ class ContentProcessor {
         title: context?.title || "unknown",
       };
 
-      // Send detailed Telegram notification and WAIT for completion
       try {
         await notifyTelegram(
           `🚨 ContentProcessor Type Error Detected!\n\n` +
@@ -944,12 +958,11 @@ class ContentProcessor {
             `**Actual Value**: ${JSON.stringify(errorDetails.actualValue)}\n\n` +
             `This error was caught and handled gracefully.`
         );
-        console.log(`[ensureString] Telegram notification sent successfully`);
+        console.log(`[validateStringWithNotification] Notification sent for ${errorDetails.method}`);
       } catch (err) {
         console.error("Failed to send Telegram notification:", err);
       }
 
-      // Return safe fallback
       return String(value || "");
     }
 
@@ -957,7 +970,6 @@ class ContentProcessor {
   }
 
   private normalizeLineTerminators(text: string): string {
-    // Type safety ensured by caller
     return text.replace(/[\u2028\u2029]/g, "\n");
   }
 }
