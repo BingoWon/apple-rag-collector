@@ -4,7 +4,12 @@ import { Chunker } from "./Chunker.js";
 import { createEmbeddings } from "./EmbeddingProvider.js";
 import { KeyManager } from "./KeyManager.js";
 import { PostgreSQLManager } from "./PostgreSQLManager.js";
-import { type DatabaseRecord, type BatchConfig, type BatchResult, type DocumentContent } from "./types/index.js";
+import {
+  type DatabaseRecord,
+  type BatchConfig,
+  type BatchResult,
+  type DocumentContent,
+} from "./types/index.js";
 import { logger } from "./utils/logger.js";
 import { BatchErrorHandler } from "./utils/batch-error-handler.js";
 import { notifyTelegram } from "./utils/telegram-notifier.js";
@@ -143,9 +148,10 @@ class AppleDocCollector {
     });
 
     // Process only valid results
-    const processResults = validCollectResults.length > 0
-      ? await this.contentProcessor.processDocuments(validCollectResults)
-      : [];
+    const processResults =
+      validCollectResults.length > 0
+        ? await this.contentProcessor.processDocuments(validCollectResults)
+        : [];
 
     // Create result mapping
     const processResultMap = new Map<number, any>();
@@ -157,7 +163,14 @@ class AppleDocCollector {
       const collectResult = collectResults[index];
 
       if (!collectResult || !collectResult.data) {
-        return this.createErrorPlanItem(record, collectResult || { url: record.url, data: null, error: "Missing collect result" });
+        return this.createErrorPlanItem(
+          record,
+          collectResult || {
+            url: record.url,
+            data: null,
+            error: "Missing collect result",
+          }
+        );
       }
 
       const processResult = processResultMap.get(index);
@@ -204,7 +217,10 @@ class AppleDocCollector {
   }
 
   // Optimized content comparison - based on processed results
-  private compareContent(oldRecord: DatabaseRecord, processResult?: BatchResult<DocumentContent>): ComparisonResult {
+  private compareContent(
+    oldRecord: DatabaseRecord,
+    processResult?: BatchResult<DocumentContent>
+  ): ComparisonResult {
     if (this.config.forceUpdateAll) {
       return { hasChanged: true };
     }
@@ -224,8 +240,12 @@ class AppleDocCollector {
 
     if (hasChanged) {
       const changes = [];
-      if (titleChanged) changes.push(`Title: "${oldRecord.title}" → "${newTitle}"`);
-      if (contentChanged) changes.push(`Content: ${oldRecord.content.length} → ${newContent.length} chars`);
+      if (titleChanged)
+        changes.push(`Title: "${oldRecord.title}" → "${newTitle}"`);
+      if (contentChanged)
+        changes.push(
+          `Content: ${oldRecord.content.length} → ${newContent.length} chars`
+        );
 
       return {
         hasChanged,
@@ -238,12 +258,7 @@ class AppleDocCollector {
     return { hasChanged: false };
   }
 
-
-
-  private logContentChanges(
-    url: string,
-    comparison: ComparisonResult
-  ): void {
+  private logContentChanges(url: string, comparison: ComparisonResult): void {
     if (
       comparison.hasChanged &&
       !this.config.forceUpdateAll &&
@@ -279,7 +294,9 @@ class AppleDocCollector {
     const errorRecords = processingPlan.filter((r) => r.error);
 
     // Use already processed results (no duplicate processing)
-    const processResults = changedRecords.map((r) => r.processResult).filter(Boolean);
+    const processResults = changedRecords
+      .map((r) => r.processResult)
+      .filter(Boolean);
 
     const { allChunks, embeddings } =
       await this.generateChunksAndEmbeddings(processResults);
