@@ -30,17 +30,22 @@ class ContentProcessor {
     }
 
     return BatchErrorHandler.safeExecute(item.url, () => {
-      const documentTitle = item.data!.metadata?.title || 'untitled';
+      const documentTitle = item.data!.metadata?.title || "untitled";
       const context = { url: item.url, title: documentTitle };
 
-      const { titles, content } = this.cleanAndSeparateContent(item.data!, context);
+      const { titles, content } = this.cleanAndSeparateContent(
+        item.data!,
+        context
+      );
       const extractedUrls = this.urlProcessor.extractAllUrls(item.data!);
 
       const finalTitle = titles.trim() || null;
 
+      const safeContent = this.ensureString(content, context, 'processSingleDocument');
+
       const documentContent: DocumentContent = {
         title: finalTitle,
-        content: this.normalizeLineTerminators(content, { url: item.url, title: finalTitle || 'untitled' }),
+        content: this.normalizeLineTerminators(safeContent),
         extractedUrls,
       };
 
@@ -48,7 +53,10 @@ class ContentProcessor {
     });
   }
 
-  private cleanAndSeparateContent(docData: AppleAPIResponse, context?: { url?: string; title?: string }): {
+  private cleanAndSeparateContent(
+    docData: AppleAPIResponse,
+    context?: { url?: string; title?: string }
+  ): {
     titles: string;
     content: string;
   } {
@@ -138,7 +146,10 @@ class ContentProcessor {
     return `${platform.name}${version ? " " + version : ""}${beta}`;
   }
 
-  private extractMainContent(docData: AppleAPIResponse, context?: { url?: string; title?: string }): string {
+  private extractMainContent(
+    docData: AppleAPIResponse,
+    context?: { url?: string; title?: string }
+  ): string {
     if (!docData.primaryContentSections?.length) return "";
 
     const sections = docData.primaryContentSections
@@ -154,8 +165,9 @@ class ContentProcessor {
 
     // Join sections with exactly one empty line between them
     const content = sections.join("\n\n");
+    const safeContent = this.ensureString(content, context, 'extractMainContent');
 
-    return this.normalizeLineTerminators(content, context);
+    return this.normalizeLineTerminators(safeContent);
   }
 
   private convertContentSectionToMarkdown(
@@ -294,8 +306,14 @@ class ContentProcessor {
     );
   }
 
-  private cleanContent(content: string, context?: { url?: string; title?: string }): string {
-    return this.normalizeLineTerminators(content, context)
+  private cleanContent(
+    content: string,
+    context?: { url?: string; title?: string }
+  ): string {
+    // Type safety check at method entry
+    const safeContent = this.ensureString(content, context, 'cleanContent');
+
+    return this.normalizeLineTerminators(safeContent)
       .replace(/^#+\s*/, "")
       .replace(/\n+$/, "");
   }
@@ -306,10 +324,16 @@ class ContentProcessor {
     context?: { url?: string; title?: string }
   ): string {
     const handlers: Record<string, () => string> = {
-      text: () => this.normalizeLineTerminators(inline.text || "", context),
+      text: () => {
+        const safeText = this.ensureString(inline.text || "", context, 'renderInlineContent.text');
+        return this.normalizeLineTerminators(safeText);
+      },
       reference: () => this.renderReference(inline, references),
-      codeVoice: () =>
-        inline.code ? `\`${this.normalizeLineTerminators(inline.code, context)}\`` : "",
+      codeVoice: () => {
+        if (!inline.code) return "";
+        const safeCode = this.ensureString(inline.code, context, 'renderInlineContent.codeVoice');
+        return `\`${this.normalizeLineTerminators(safeCode)}\``;
+      },
       image: () => this.renderMedia(inline, "Image"),
       video: () => this.renderMedia(inline, "Video"),
     };
@@ -882,32 +906,48 @@ class ContentProcessor {
     return { title: section.title || "", content };
   }
 
-  private normalizeLineTerminators(text: string, context?: { url?: string; title?: string }): string {
-    // Type safety check with detailed error reporting
-    if (typeof text !== 'string') {
+  /**
+   * Unified type safety check for all string operations
+   * Ensures input is a string and sends detailed error notifications if not
+   */
+  private ensureString(
+    value: any,
+    context?: { url?: string; title?: string },
+    methodName?: string
+  ): string {
+    if (typeof value !== "string") {
       const errorDetails = {
-        actualType: typeof text,
-        actualValue: text,
-        url: context?.url || 'unknown',
-        title: context?.title || 'unknown'
+        method: methodName || "unknown",
+        actualType: typeof value,
+        actualValue: value,
+        url: context?.url || "unknown",
+        title: context?.title || "unknown",
       };
 
       // Send detailed Telegram notification (fire and forget)
       notifyTelegram(
         `🚨 ContentProcessor Type Error Detected!\n\n` +
-        `**Error**: content is not a string\n` +
-        `**URL**: ${errorDetails.url}\n` +
-        `**Title**: ${errorDetails.title}\n` +
-        `**Expected Type**: string\n` +
-        `**Actual Type**: ${errorDetails.actualType}\n` +
-        `**Actual Value**: ${JSON.stringify(errorDetails.actualValue)}\n\n` +
-        `This error was caught and handled gracefully.`
-      ).catch(err => console.error('Failed to send Telegram notification:', err));
+          `**Method**: ${errorDetails.method}\n` +
+          `**Error**: value is not a string\n` +
+          `**URL**: ${errorDetails.url}\n` +
+          `**Title**: ${errorDetails.title}\n` +
+          `**Expected Type**: string\n` +
+          `**Actual Type**: ${errorDetails.actualType}\n` +
+          `**Actual Value**: ${JSON.stringify(errorDetails.actualValue)}\n\n` +
+          `This error was caught and handled gracefully.`
+      ).catch((err) =>
+        console.error("Failed to send Telegram notification:", err)
+      );
 
       // Return safe fallback
-      return String(text || '');
+      return String(value || "");
     }
 
+    return value;
+  }
+
+  private normalizeLineTerminators(text: string): string {
+    // Type safety ensured by caller
     return text.replace(/[\u2028\u2029]/g, "\n");
   }
 }
