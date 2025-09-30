@@ -143,8 +143,20 @@ async function processAppleDocuments(env: Env): Promise<void> {
         );
       }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+
+      // Send detailed error notification to Telegram
+      await notifyTelegram(
+        `🚨 Batch Processing Error!\n\n` +
+        `**Batch**: ${i + 1}/${batchCount}\n` +
+        `**Error**: ${errorMessage}\n` +
+        `**Stack**: ${errorStack ? errorStack.substring(0, 500) : 'N/A'}\n\n` +
+        `Continuing with next batch...`
+      );
+
       await logger.error(
-        `Batch ${i + 1} failed: ${error instanceof Error ? error.message : String(error)}`
+        `Batch ${i + 1} failed: ${errorMessage}`
       );
       // Continue with next batch instead of failing completely
     }

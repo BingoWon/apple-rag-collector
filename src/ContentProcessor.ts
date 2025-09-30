@@ -29,11 +29,11 @@ class ContentProcessor {
       );
     }
 
-    return BatchErrorHandler.safeExecute(item.url, () => {
+    return BatchErrorHandler.safeExecute(item.url, async () => {
       const documentTitle = item.data!.metadata?.title || "untitled";
       const context = { url: item.url, title: documentTitle };
 
-      const { titles, content } = this.cleanAndSeparateContent(
+      const { titles, content } = await this.cleanAndSeparateContent(
         item.data!,
         context
       );
@@ -41,7 +41,11 @@ class ContentProcessor {
 
       const finalTitle = titles.trim() || null;
 
-      const safeContent = this.ensureString(content, context, 'processSingleDocument');
+      const safeContent = await this.ensureString(
+        content,
+        context,
+        "processSingleDocument"
+      );
 
       const documentContent: DocumentContent = {
         title: finalTitle,
@@ -53,15 +57,15 @@ class ContentProcessor {
     });
   }
 
-  private cleanAndSeparateContent(
+  private async cleanAndSeparateContent(
     docData: AppleAPIResponse,
     context?: { url?: string; title?: string }
-  ): {
+  ): Promise<{
     titles: string;
     content: string;
-  } {
+  }> {
     const titles = this.extractTitleContent(docData);
-    const content = this.extractMainContent(docData, context);
+    const content = await this.extractMainContent(docData, context);
     return { titles, content };
   }
 
@@ -146,10 +150,10 @@ class ContentProcessor {
     return `${platform.name}${version ? " " + version : ""}${beta}`;
   }
 
-  private extractMainContent(
+  private async extractMainContent(
     docData: AppleAPIResponse,
     context?: { url?: string; title?: string }
-  ): string {
+  ): Promise<string> {
     if (!docData.primaryContentSections?.length) return "";
 
     const sections = docData.primaryContentSections
@@ -165,7 +169,11 @@ class ContentProcessor {
 
     // Join sections with exactly one empty line between them
     const content = sections.join("\n\n");
-    const safeContent = this.ensureString(content, context, 'extractMainContent');
+    const safeContent = await this.ensureString(
+      content,
+      context,
+      "extractMainContent"
+    );
 
     return this.normalizeLineTerminators(safeContent);
   }
@@ -306,12 +314,9 @@ class ContentProcessor {
     );
   }
 
-  private cleanContent(
-    content: string,
-    context?: { url?: string; title?: string }
-  ): string {
-    // Type safety check at method entry
-    const safeContent = this.ensureString(content, context, 'cleanContent');
+  private cleanContent(content: string): string {
+    // Synchronous type safety check without notification
+    const safeContent = typeof content === "string" ? content : String(content || "");
 
     return this.normalizeLineTerminators(safeContent)
       .replace(/^#+\s*/, "")
@@ -320,18 +325,19 @@ class ContentProcessor {
 
   private renderInlineContent(
     inline: any,
-    references: Record<string, any>,
-    context?: { url?: string; title?: string }
+    references: Record<string, any>
   ): string {
     const handlers: Record<string, () => string> = {
       text: () => {
-        const safeText = this.ensureString(inline.text || "", context, 'renderInlineContent.text');
+        // Synchronous fallback - type check without notification
+        const safeText = typeof inline.text === "string" ? inline.text : String(inline.text || "");
         return this.normalizeLineTerminators(safeText);
       },
       reference: () => this.renderReference(inline, references),
       codeVoice: () => {
         if (!inline.code) return "";
-        const safeCode = this.ensureString(inline.code, context, 'renderInlineContent.codeVoice');
+        // Synchronous fallback - type check without notification
+        const safeCode = typeof inline.code === "string" ? inline.code : String(inline.code);
         return `\`${this.normalizeLineTerminators(safeCode)}\``;
       },
       image: () => this.renderMedia(inline, "Image"),
@@ -909,12 +915,13 @@ class ContentProcessor {
   /**
    * Unified type safety check for all string operations
    * Ensures input is a string and sends detailed error notifications if not
+   * IMPORTANT: This is async to ensure Telegram notifications are sent before errors propagate
    */
-  private ensureString(
+  private async ensureString(
     value: any,
     context?: { url?: string; title?: string },
     methodName?: string
-  ): string {
+  ): Promise<string> {
     if (typeof value !== "string") {
       const errorDetails = {
         method: methodName || "unknown",
@@ -924,20 +931,23 @@ class ContentProcessor {
         title: context?.title || "unknown",
       };
 
-      // Send detailed Telegram notification (fire and forget)
-      notifyTelegram(
-        `🚨 ContentProcessor Type Error Detected!\n\n` +
-          `**Method**: ${errorDetails.method}\n` +
-          `**Error**: value is not a string\n` +
-          `**URL**: ${errorDetails.url}\n` +
-          `**Title**: ${errorDetails.title}\n` +
-          `**Expected Type**: string\n` +
-          `**Actual Type**: ${errorDetails.actualType}\n` +
-          `**Actual Value**: ${JSON.stringify(errorDetails.actualValue)}\n\n` +
-          `This error was caught and handled gracefully.`
-      ).catch((err) =>
-        console.error("Failed to send Telegram notification:", err)
-      );
+      // Send detailed Telegram notification and WAIT for completion
+      try {
+        await notifyTelegram(
+          `🚨 ContentProcessor Type Error Detected!\n\n` +
+            `**Method**: ${errorDetails.method}\n` +
+            `**Error**: value is not a string\n` +
+            `**URL**: ${errorDetails.url}\n` +
+            `**Title**: ${errorDetails.title}\n` +
+            `**Expected Type**: string\n` +
+            `**Actual Type**: ${errorDetails.actualType}\n` +
+            `**Actual Value**: ${JSON.stringify(errorDetails.actualValue)}\n\n` +
+            `This error was caught and handled gracefully.`
+        );
+        console.log(`[ensureString] Telegram notification sent successfully`);
+      } catch (err) {
+        console.error("Failed to send Telegram notification:", err);
+      }
 
       // Return safe fallback
       return String(value || "");
