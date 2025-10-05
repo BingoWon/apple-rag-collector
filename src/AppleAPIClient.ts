@@ -118,6 +118,19 @@ class AppleAPIClient {
         "PERMANENT_ERROR:NO_SUBSTANTIAL_CONTENT:Only contains mentions or link lists"
       );
     }
+
+    // Runtime type safety: validate references structure
+    if (data.references && typeof data.references === "object") {
+      for (const ref of Object.values(data.references)) {
+        if (ref && typeof ref === "object") {
+          const refObj = ref as any;
+          // Sanitize non-string URLs by removing them
+          if (refObj.url !== undefined && typeof refObj.url !== "string") {
+            delete refObj.url;
+          }
+        }
+      }
+    }
   }
 }
 

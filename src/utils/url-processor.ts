@@ -14,7 +14,7 @@ class UrlProcessor {
     if (!docData.references) return [];
 
     const rawUrls = Object.values(docData.references)
-      .filter((ref) => ref?.url)
+      .filter((ref) => ref?.url && typeof ref.url === "string")
       .map((ref) =>
         ref.url!.startsWith("http")
           ? ref.url!
