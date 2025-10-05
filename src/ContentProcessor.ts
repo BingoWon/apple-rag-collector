@@ -5,23 +5,7 @@ import {
 } from "./types/index.js";
 import { BatchErrorHandler } from "./utils/batch-error-handler.js";
 import { UrlProcessor } from "./utils/url-processor.js";
-import { notifyTelegram } from "./utils/telegram-notifier.js";
 
-/**
- * ContentProcessor - Type Safety Strategy
- *
- * Two-tier type safety approach for optimal performance and reliability:
- *
- * 1. Critical Entry Points (processSingleDocument, extractMainContent):
- *    - Use validateStringWithNotification() for type validation
- *    - Sends detailed Telegram notifications on type errors
- *    - Async to ensure notifications complete before errors propagate
- *
- * 2. Frequently Called Methods (cleanContent, renderInlineContent):
- *    - Use toSafeString() for lightweight type conversion
- *    - No notifications to avoid performance overhead
- *    - Synchronous for efficiency
- */
 class ContentProcessor {
   private urlProcessor = new UrlProcessor();
 
@@ -44,43 +28,26 @@ class ContentProcessor {
       );
     }
 
-    return BatchErrorHandler.safeExecute(item.url, async () => {
-      const documentTitle = item.data!.metadata?.title || "untitled";
-      const context = { url: item.url, title: documentTitle };
-
-      const { titles, content } = await this.cleanAndSeparateContent(
-        item.data!,
-        context
-      );
+    return BatchErrorHandler.safeExecute(item.url, () => {
+      const { titles, content } = this.cleanAndSeparateContent(item.data!);
       const extractedUrls = this.urlProcessor.extractAllUrls(item.data!);
 
-      const finalTitle = titles.trim() || null;
-
-      const safeContent = await this.validateStringWithNotification(
-        content,
-        context,
-        "processSingleDocument"
-      );
-
-      const documentContent: DocumentContent = {
-        title: finalTitle,
-        content: this.normalizeLineTerminators(safeContent),
+      return {
+        title: titles.trim() || null,
+        content: this.normalizeLineTerminators(content),
         extractedUrls,
       };
-
-      return documentContent;
     });
   }
 
-  private async cleanAndSeparateContent(
-    docData: AppleAPIResponse,
-    context?: { url?: string; title?: string }
-  ): Promise<{
+  private cleanAndSeparateContent(
+    docData: AppleAPIResponse
+  ): {
     titles: string;
     content: string;
-  }> {
+  } {
     const titles = this.extractTitleContent(docData);
-    const content = await this.extractMainContent(docData, context);
+    const content = this.extractMainContent(docData);
     return { titles, content };
   }
 
@@ -165,10 +132,7 @@ class ContentProcessor {
     return `${platform.name}${version ? " " + version : ""}${beta}`;
   }
 
-  private async extractMainContent(
-    docData: AppleAPIResponse,
-    context?: { url?: string; title?: string }
-  ): Promise<string> {
+  private extractMainContent(docData: AppleAPIResponse): string {
     if (!docData.primaryContentSections?.length) return "";
 
     const sections = docData.primaryContentSections
@@ -180,17 +144,9 @@ class ContentProcessor {
         )
       )
       .filter((result) => result.content)
-      .map((result) => result.content.trim()); // Trim each section to remove trailing whitespace
+      .map((result) => result.content.trim());
 
-    // Join sections with exactly one empty line between them
-    const content = sections.join("\n\n");
-    const safeContent = await this.validateStringWithNotification(
-      content,
-      context,
-      "extractMainContent"
-    );
-
-    return this.normalizeLineTerminators(safeContent);
+    return this.normalizeLineTerminators(sections.join("\n\n"));
   }
 
   private convertContentSectionToMarkdown(
@@ -925,48 +881,6 @@ class ContentProcessor {
    */
   private toSafeString(value: any): string {
     return typeof value === "string" ? value : String(value || "");
-  }
-
-  /**
-   * Critical type validation with Telegram notification
-   * Used at main entry points to ensure type errors are reported
-   * Async to guarantee notification delivery before error propagation
-   */
-  private async validateStringWithNotification(
-    value: any,
-    context?: { url?: string; title?: string },
-    methodName?: string
-  ): Promise<string> {
-    if (typeof value !== "string") {
-      const errorDetails = {
-        method: methodName || "unknown",
-        actualType: typeof value,
-        actualValue: value,
-        url: context?.url || "unknown",
-        title: context?.title || "unknown",
-      };
-
-      try {
-        await notifyTelegram(
-          `🚨 ContentProcessor Type Error Detected!\n\n` +
-            `**Method**: ${errorDetails.method}\n` +
-            `**Error**: value is not a string\n` +
-            `**URL**: ${errorDetails.url}\n` +
-            `**Title**: ${errorDetails.title}\n` +
-            `**Expected Type**: string\n` +
-            `**Actual Type**: ${errorDetails.actualType}\n` +
-            `**Actual Value**: ${JSON.stringify(errorDetails.actualValue)}\n\n` +
-            `This error was caught and handled gracefully.`
-        );
-        console.log(`[validateStringWithNotification] Notification sent for ${errorDetails.method}`);
-      } catch (err) {
-        console.error("Failed to send Telegram notification:", err);
-      }
-
-      return String(value || "");
-    }
-
-    return value;
   }
 
   private normalizeLineTerminators(text: string): string {

@@ -21,7 +21,7 @@ const SESSION_DIR = path.join(OUTPUT_DIR, TIMESTAMP);
 
 // Test URL
 const TEST_URL =
-  "https://developer.apple.com/documentation/xcode/formatting-your-documentation-content";
+  "https://developer.apple.com/documentation/foundation/nsurl/customplaygroundquicklook";
 
 // Ensure output directory exists
 if (!fs.existsSync(OUTPUT_DIR)) {

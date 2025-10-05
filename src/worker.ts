@@ -146,17 +146,13 @@ async function processAppleDocuments(env: Env): Promise<void> {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
 
-      // Send detailed error notification to Telegram
-      await notifyTelegram(
+      // Send detailed error notification via logger.error (which handles both logging and Telegram notification)
+      await logger.error(
         `🚨 Batch Processing Error!\n\n` +
         `**Batch**: ${i + 1}/${batchCount}\n` +
         `**Error**: ${errorMessage}\n` +
         `**Stack**: ${errorStack ? errorStack.substring(0, 500) : 'N/A'}\n\n` +
         `Continuing with next batch...`
-      );
-
-      await logger.error(
-        `Batch ${i + 1} failed: ${errorMessage}`
       );
       // Continue with next batch instead of failing completely
     }
@@ -176,7 +172,7 @@ async function processAppleDocuments(env: Env): Promise<void> {
   const currentMinute = now.getMinutes();
 
   // Only send notification if current time is within first XX minutes of the hour (0, 1, or 2)
-  if (currentMinute < 12) {
+  if (currentMinute < 2) {
     try {
       const finalStats = await dbManager.getStats();
       const statsMessage =
