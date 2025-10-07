@@ -1,15 +1,15 @@
 // Apple Documentation Batch Chunker Comparison Test Script
 // This script tests multiple URLs to ensure Python and TypeScript chunking implementations are identical
 
-import fs from "fs";
-import path from "path";
-import { spawn } from "child_process";
-import { fileURLToPath } from "url";
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Import our unified processors and chunker
 import { AppleAPIClient } from "../src/AppleAPIClient.js";
-import { ContentProcessor } from "../src/ContentProcessor.js";
 import { Chunker } from "../src/Chunker.js";
+import { ContentProcessor } from "../src/ContentProcessor.js";
 
 // ES module compatibility
 const __filename = fileURLToPath(import.meta.url);
@@ -17,8 +17,7 @@ const __dirname = path.dirname(__filename);
 
 // Configuration
 const OUTPUT_DIR = path.join(__dirname, "batch-chunker-comparison-output");
-const TIMESTAMP =
-  new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5) + "Z";
+const TIMESTAMP = `${new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5)}Z`;
 const SESSION_DIR = path.join(OUTPUT_DIR, TIMESTAMP);
 const TEST_URLS_FILE = path.join(__dirname, "test_urls.txt");
 
@@ -193,7 +192,7 @@ print(json.dumps(result, ensure_ascii=False))
       // Clean up temp file
       try {
         fs.unlinkSync(tempScriptPath);
-      } catch (e) {
+      } catch (_e) {
         // Ignore cleanup errors
       }
 
@@ -367,7 +366,7 @@ async function runBatchTest() {
     );
 
     // Display results
-    console.log("\n" + "=".repeat(100));
+    console.log(`\n${"=".repeat(100)}`);
     console.log("BATCH CHUNKING COMPARISON RESULTS");
     console.log("=".repeat(100));
     console.log(`Total URLs Tested: ${summary.totalUrls}`);
@@ -384,9 +383,9 @@ async function runBatchTest() {
         .forEach((result, index) => {
           console.log(`  ${index + 1}. ${result.url}`);
           if (result.differences) {
-            result.differences
-              .slice(0, 3)
-              .forEach((diff) => console.log(`     - ${diff}`));
+            for (const diff of result.differences.slice(0, 3)) {
+              console.log(`     - ${diff}`);
+            }
           }
         });
     }

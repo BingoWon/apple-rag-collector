@@ -1,17 +1,17 @@
 import { AppleAPIClient } from "./AppleAPIClient.js";
-import { ContentProcessor } from "./ContentProcessor.js";
 import { Chunker } from "./Chunker.js";
+import { ContentProcessor } from "./ContentProcessor.js";
 import { createEmbeddings } from "./EmbeddingProvider.js";
-import { KeyManager } from "./KeyManager.js";
-import { PostgreSQLManager } from "./PostgreSQLManager.js";
-import {
-  type DatabaseRecord,
-  type BatchConfig,
-  type BatchResult,
-  type DocumentContent,
+import type { KeyManager } from "./KeyManager.js";
+import type { PostgreSQLManager } from "./PostgreSQLManager.js";
+import type {
+  BatchConfig,
+  BatchResult,
+  DatabaseRecord,
+  DocumentContent,
 } from "./types/index.js";
-import { logger } from "./utils/logger.js";
 import { BatchErrorHandler } from "./utils/batch-error-handler.js";
+import { logger } from "./utils/logger.js";
 import { notifyTelegram } from "./utils/telegram-notifier.js";
 
 interface ProcessBatchResult {

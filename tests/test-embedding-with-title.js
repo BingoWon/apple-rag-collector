@@ -4,9 +4,9 @@
  * Test script to verify that embedding generation correctly uses title + content
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import { AppleDocCollector } from "../src/AppleDocCollector.js";
-import fs from "fs";
-import path from "path";
 
 const TEST_URLS = [
   "https://developer.apple.com/documentation/xcode-release-notes/xcode-26-release-notes",

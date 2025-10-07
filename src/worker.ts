@@ -3,15 +3,15 @@
  * Executes batch processing on cron schedule (every 5 minutes)
  */
 
+import postgres from "postgres";
 import { AppleDocCollector } from "./AppleDocCollector.js";
 import { PostgreSQLManager } from "./PostgreSQLManager.js";
+import type { BatchConfig } from "./types/index.js";
 import { logger } from "./utils/logger.js";
 import {
   configureTelegram,
   notifyTelegram,
 } from "./utils/telegram-notifier.js";
-import type { BatchConfig } from "./types/index.js";
-import postgres from "postgres";
 
 interface Env {
   DB: D1Database;
@@ -77,7 +77,7 @@ export default {
 
 async function processAppleDocuments(env: Env): Promise<void> {
   const config: BatchConfig = {
-    batchSize: parseInt(env.BATCH_SIZE || "30"),
+    batchSize: parseInt(env.BATCH_SIZE || "30", 10),
     forceUpdateAll: env.FORCE_UPDATE_ALL === "true",
   };
 
@@ -87,7 +87,7 @@ async function processAppleDocuments(env: Env): Promise<void> {
 
   const sql = postgres({
     host: env.DB_HOST,
-    port: parseInt(env.DB_PORT || "5432"),
+    port: parseInt(env.DB_PORT || "5432", 10),
     database: env.DB_NAME,
     username: env.DB_USER,
     password: env.DB_PASSWORD || "",
@@ -123,7 +123,7 @@ async function processAppleDocuments(env: Env): Promise<void> {
 
   const collector = new AppleDocCollector(dbManager, keyManager, config, env);
 
-  const batchCount = parseInt(env.BATCH_COUNT || "30");
+  const batchCount = parseInt(env.BATCH_COUNT || "30", 10);
 
   logger.info(
     `Starting ${batchCount} batches × ${config.batchSize} URLs = ${config.batchSize * batchCount} total`
@@ -143,16 +143,17 @@ async function processAppleDocuments(env: Env): Promise<void> {
         );
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
 
       // Send detailed error notification via logger.error (which handles both logging and Telegram notification)
       await logger.error(
         `🚨 Batch Processing Error!\n\n` +
-        `**Batch**: ${i + 1}/${batchCount}\n` +
-        `**Error**: ${errorMessage}\n` +
-        `**Stack**: ${errorStack ? errorStack.substring(0, 500) : 'N/A'}\n\n` +
-        `Continuing with next batch...`
+          `**Batch**: ${i + 1}/${batchCount}\n` +
+          `**Error**: ${errorMessage}\n` +
+          `**Stack**: ${errorStack ? errorStack.substring(0, 500) : "N/A"}\n\n` +
+          `Continuing with next batch...`
       );
       // Continue with next batch instead of failing completely
     }

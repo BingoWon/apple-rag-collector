@@ -4,8 +4,8 @@
  * Test script to verify the complete embedding flow with title + content
  */
 
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 
 function testEmbeddingFlow() {
   console.log("🧪 Testing Complete Embedding Flow");
@@ -29,7 +29,7 @@ function testEmbeddingFlow() {
     // Simulate the embedding preparation logic from AppleDocCollector
     console.log("🔄 Simulating AppleDocCollector embedding preparation...");
 
-    const allChunks = chunksData.map((chunk, index) => ({
+    const allChunks = chunksData.map((chunk, _index) => ({
       url: "test-url",
       chunk: chunk,
     }));
@@ -70,7 +70,7 @@ function testEmbeddingFlow() {
     // Show first embedding text sample
     console.log("📝 Sample Embedding Text (First Chunk):");
     console.log("─".repeat(60));
-    console.log(embeddingTexts[0].substring(0, 500) + "...");
+    console.log(`${embeddingTexts[0].substring(0, 500)}...`);
     console.log("─".repeat(60));
     console.log("");
 

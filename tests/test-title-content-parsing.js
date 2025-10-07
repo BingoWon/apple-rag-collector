@@ -4,9 +4,6 @@
  * Test script to verify that JSON chunk parsing correctly combines title + content
  */
 
-import fs from "fs";
-import path from "path";
-
 function testTitleContentParsing() {
   console.log("🧪 Testing Title + Content Parsing Logic");
   console.log("=".repeat(60));

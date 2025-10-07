@@ -7,6 +7,7 @@
  * - Optimal performance and error handling
  */
 import { createEmbeddings } from "../src/EmbeddingProvider.js";
+
 // Test data
 const testTexts = [
   "Apple Developer Documentation provides comprehensive guides for iOS development.",

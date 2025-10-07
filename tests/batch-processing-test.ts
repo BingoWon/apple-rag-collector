@@ -6,14 +6,14 @@
 import { Pool } from "pg";
 import { AppleDocCollector } from "../src/AppleDocCollector.js";
 import { PostgreSQLManager } from "../src/PostgreSQLManager.js";
-import { Logger } from "../src/utils/logger.js";
 import { type AppConfig } from "../src/types/index.js";
+import { Logger } from "../src/utils/logger.js";
 
 // 测试配置 - 使用 .env 中的数据库配置
 const testConfig: AppConfig = {
   database: {
     host: process.env["DB_HOST"] || "localhost",
-    port: parseInt(process.env["DB_PORT"] || "5432"),
+    port: parseInt(process.env["DB_PORT"] || "5432", 10),
     database: process.env["DB_NAME"] || "crawl4ai_rag",
     username: process.env["DB_USER"] || "bingo",
     password: process.env["DB_PASSWORD"] || "",

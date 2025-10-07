@@ -1,9 +1,9 @@
 // Apple Documentation Collector Test Script
 // This script tests the unified AppleDocProcessor implementation
 
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Import our unified processors
 import { AppleAPIClient } from "../dist/AppleAPIClient.js";
@@ -15,8 +15,7 @@ const __dirname = path.dirname(__filename);
 
 // Configuration
 const OUTPUT_DIR = path.join(__dirname, "output");
-const TIMESTAMP =
-  new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5) + "Z";
+const TIMESTAMP = `${new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5)}Z`;
 const SESSION_DIR = path.join(OUTPUT_DIR, TIMESTAMP);
 
 // Test URL
@@ -231,7 +230,7 @@ async function main() {
 
   if (results.success) {
     logSuccess("Test completed successfully");
-    console.log("\n" + "=".repeat(60));
+    console.log(`\n${"=".repeat(60)}`);
     console.log("PROCESSING SUMMARY");
     console.log("=".repeat(60));
     console.log(`Title: ${results.data.processedContent.title}`);

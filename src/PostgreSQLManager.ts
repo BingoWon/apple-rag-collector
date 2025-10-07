@@ -1,8 +1,8 @@
 import postgres from "postgres";
 import {
+  type ChunkRecord,
   type DatabaseRecord,
   type DatabaseStats,
-  type ChunkRecord,
 } from "./types/index.js";
 import { logger } from "./utils/logger.js";
 
@@ -25,9 +25,9 @@ class PostgreSQLManager {
     if (urls.length === 0) return 0;
 
     const result = await this.sql`
-      INSERT INTO pages ${
-        this.sql(urls.map(url => ({ url, collect_count: 0 })))
-      }
+      INSERT INTO pages ${this.sql(
+        urls.map((url) => ({ url, collect_count: 0 }))
+      )}
       ON CONFLICT (url) DO NOTHING
     `;
 
@@ -107,24 +107,28 @@ class PostgreSQLManager {
       `,
     ]);
 
-    const total = parseInt(totalResult[0]?.["count"] || "0");
-    const collected = parseInt(collectedResult[0]?.["count"] || "0");
+    const total = parseInt(totalResult[0]?.["count"] || "0", 10);
+    const collected = parseInt(collectedResult[0]?.["count"] || "0", 10);
     const avgCollectCount = parseFloat(avgResult[0]?.["avg"] || "0");
-    const minCollectCount = parseInt(minMaxResult[0]?.["min"] || "0");
-    const maxCollectCount = parseInt(minMaxResult[0]?.["max"] || "0");
-    const totalChunks = parseInt(chunksResult[0]?.["count"] || "0");
+    const minCollectCount = parseInt(minMaxResult[0]?.["min"] || "0", 10);
+    const maxCollectCount = parseInt(minMaxResult[0]?.["max"] || "0", 10);
+    const totalChunks = parseInt(chunksResult[0]?.["count"] || "0", 10);
 
     const pagesMissingContentCount = parseInt(
-      pagesQualityResult[0]?.["missing_content_count"] || "0"
+      pagesQualityResult[0]?.["missing_content_count"] || "0",
+      10
     );
     const pagesMissingTitleCount = parseInt(
-      pagesQualityResult[0]?.["missing_title_count"] || "0"
+      pagesQualityResult[0]?.["missing_title_count"] || "0",
+      10
     );
     const chunksMissingContentCount = parseInt(
-      chunksQualityResult[0]?.["missing_content_count"] || "0"
+      chunksQualityResult[0]?.["missing_content_count"] || "0",
+      10
     );
     const chunksMissingTitleCount = parseInt(
-      chunksQualityResult[0]?.["missing_title_count"] || "0"
+      chunksQualityResult[0]?.["missing_title_count"] || "0",
+      10
     );
 
     const collectCountDistribution: Record<
@@ -133,7 +137,7 @@ class PostgreSQLManager {
     > = {};
     distributionResult.forEach((row: any) => {
       const collectCount = String(row["collect_count"]);
-      const count = parseInt(row["count"]);
+      const count = parseInt(row["count"], 10);
       const percentage =
         total > 0 ? `${Math.round((count / total) * 10000) / 100}%` : "0%";
       collectCountDistribution[collectCount] = { count, percentage };
