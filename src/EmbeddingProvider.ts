@@ -11,7 +11,7 @@
  * - Atomic batch error handling
  */
 
-import { KeyManager } from "./KeyManager.js";
+import type { KeyManager } from "./KeyManager.js";
 import { logger } from "./utils/logger.js";
 
 // ============================================================================
@@ -33,10 +33,10 @@ export function createEmbeddingConfig(env?: {
 }): EmbeddingConfig {
   return {
     model: env?.EMBEDDING_MODEL || "Qwen/Qwen3-Embedding-4B",
-    dimension: parseInt(env?.EMBEDDING_DIM || "2560"),
+    dimension: parseInt(env?.EMBEDDING_DIM || "2560", 10),
     apiBaseUrl:
       env?.EMBEDDING_API_BASE_URL || "https://api.siliconflow.cn/v1/embeddings",
-    timeout: parseInt(env?.EMBEDDING_API_TIMEOUT || "30") * 1000,
+    timeout: parseInt(env?.EMBEDDING_API_TIMEOUT || "30", 10) * 1000,
   };
 }
 

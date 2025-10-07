@@ -20,13 +20,17 @@
       "recommended": true,
       "suspicious": {
         "noExplicitAny": "warn",
-        "noArrayIndexKey": "off"
+        "noArrayIndexKey": "off",
+        "useIterableCallbackReturn": "off"
       },
       "style": {
-        "noNonNullAssertion": "off"
+        "noNonNullAssertion": "off",
+        "useImportType": "off"
       },
       "complexity": {
-        "noForEach": "off"
+        "noForEach": "off",
+        "useLiteralKeys": "off",
+        "noStaticOnlyClass": "warn"
       }
     }
   },

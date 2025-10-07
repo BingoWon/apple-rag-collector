@@ -1,7 +1,7 @@
-import {
-  type AppleAPIResponse,
-  type DocumentContent,
-  type BatchResult,
+import type {
+  AppleAPIResponse,
+  BatchResult,
+  DocumentContent,
 } from "./types/index.js";
 import { BatchErrorHandler } from "./utils/batch-error-handler.js";
 import { UrlProcessor } from "./utils/url-processor.js";
@@ -40,9 +40,7 @@ class ContentProcessor {
     });
   }
 
-  private cleanAndSeparateContent(
-    docData: AppleAPIResponse
-  ): {
+  private cleanAndSeparateContent(docData: AppleAPIResponse): {
     titles: string;
     content: string;
   } {
@@ -102,7 +100,7 @@ class ContentProcessor {
       }
     }
 
-    return parts.join("") + "\n";
+    return `${parts.join("")}\n`;
   }
 
   private formatPlatformInfo(platform: any): string {
@@ -129,7 +127,7 @@ class ContentProcessor {
 
     const beta = platform.beta ? " [Beta]" : "";
 
-    return `${platform.name}${version ? " " + version : ""}${beta}`;
+    return `${platform.name}${version ? ` ${version}` : ""}${beta}`;
   }
 
   private extractMainContent(docData: AppleAPIResponse): string {
@@ -348,7 +346,7 @@ class ContentProcessor {
               references,
               indentLevel
             );
-            if (result.title) title += result.title + "\n";
+            if (result.title) title += `${result.title}\n`;
             if (result.content) content += result.content;
           });
         }
@@ -411,7 +409,7 @@ class ContentProcessor {
     // Split parameters by comma, but be careful with nested types
     const params = this.splitParameters(paramsPart);
 
-    let result = funcPart + "(\n";
+    let result = `${funcPart}(\n`;
     params.forEach((param, index) => {
       const trimmedParam = param.trim();
       if (trimmedParam) {
@@ -547,7 +545,7 @@ class ContentProcessor {
           if (index === 0 && asideLabel) {
             content += `**${asideLabel}**: ${result.content}\n`;
           } else {
-            content += result.content + "\n";
+            content += `${result.content}\n`;
           }
         }
       });
@@ -582,7 +580,7 @@ class ContentProcessor {
               0
             );
             if (result.content) {
-              content += result.content + "\n";
+              content += `${result.content}\n`;
             }
           });
         }
@@ -607,8 +605,8 @@ class ContentProcessor {
           references,
           indentLevel
         );
-        if (result.title) title += result.title + "\n";
-        if (result.content) content += result.content + "\n";
+        if (result.title) title += `${result.title}\n`;
+        if (result.content) content += `${result.content}\n`;
       });
     }
 
@@ -637,7 +635,7 @@ class ContentProcessor {
               0
             );
             if (result.content) {
-              content += result.content + "\n";
+              content += `${result.content}\n`;
             }
           });
         }
@@ -706,7 +704,7 @@ class ContentProcessor {
                 0
               );
               if (result.content) {
-                content += result.content + "\n";
+                content += `${result.content}\n`;
               }
             });
           }
@@ -750,7 +748,7 @@ class ContentProcessor {
                 0
               );
               if (result.content) {
-                content += result.content + "\n";
+                content += `${result.content}\n`;
               }
             });
           }

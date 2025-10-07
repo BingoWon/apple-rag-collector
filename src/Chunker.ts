@@ -36,7 +36,7 @@
  * - Embedding Optimized: Title + content structure ideal for vector embeddings
  */
 
-import { type BatchConfig, type BatchResult } from "./types/index.js";
+import type { BatchConfig, BatchResult } from "./types/index.js";
 import { BatchErrorHandler } from "./utils/batch-error-handler.js";
 
 export class Chunker {

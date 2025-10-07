@@ -8,7 +8,8 @@
     "build": "tsc",
     "deploy:cf": "wrangler deploy",
     "logs": "wrangler tail",
-    "fmt": "biome format --write ."
+    "fmt": "biome format --write .",
+    "fix": "biome check --write --unsafe ."
   },
   "keywords": [
     "apple",

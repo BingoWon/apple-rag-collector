@@ -3,7 +3,7 @@
  * Eliminates duplicate error handling code across components
  */
 
-import { type BatchResult } from "../types/index.js";
+import type { BatchResult } from "../types/index.js";
 
 export class BatchErrorHandler {
   /**
@@ -31,9 +31,9 @@ export class BatchErrorHandler {
   ): Promise<BatchResult<T>> {
     try {
       const data = await fn();
-      return this.success(url, data);
+      return BatchErrorHandler.success(url, data);
     } catch (error) {
-      return this.failure<T>(url, error);
+      return BatchErrorHandler.failure<T>(url, error);
     }
   }
 

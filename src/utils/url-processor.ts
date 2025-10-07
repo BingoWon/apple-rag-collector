@@ -1,4 +1,4 @@
-import { type AppleAPIResponse } from "../types/index.js";
+import type { AppleAPIResponse } from "../types/index.js";
 
 /**
  * URL processing utility for Apple Developer documentation
@@ -14,7 +14,7 @@ class UrlProcessor {
     if (!docData.references) return [];
 
     const rawUrls = Object.values(docData.references)
-      .filter((ref) => ref?.url && typeof ref.url === "string")
+      .filter((ref) => ref?.url)
       .map((ref) =>
         ref.url!.startsWith("http")
           ? ref.url!
@@ -45,7 +45,7 @@ class UrlProcessor {
           parsed.pathname === "/" ? "/" : parsed.pathname.replace(/\/+$/, ""); // Remove trailing slashes except root
 
         return `${parsed.protocol.toLowerCase()}//${parsed.hostname.toLowerCase()}${normalizedPath}`;
-      } catch (error) {
+      } catch (_error) {
         // Return original URL if parsing fails
         return url;
       }
