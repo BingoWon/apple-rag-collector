@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.1.2/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.2.2/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -19,7 +19,7 @@
     "rules": {
       "recommended": true,
       "suspicious": {
-        "noExplicitAny": "warn",
+        "noExplicitAny": "off",
         "noArrayIndexKey": "off",
         "useIterableCallbackReturn": "off"
       },
@@ -30,7 +30,7 @@
       "complexity": {
         "noForEach": "off",
         "useLiteralKeys": "off",
-        "noStaticOnlyClass": "warn"
+        "noStaticOnlyClass": "off"
       }
     }
   },

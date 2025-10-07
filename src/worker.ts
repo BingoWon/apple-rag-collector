@@ -5,6 +5,7 @@
 
 import postgres from "postgres";
 import { AppleDocCollector } from "./AppleDocCollector.js";
+import type { KeyManager } from "./KeyManager.js";
 import { PostgreSQLManager } from "./PostgreSQLManager.js";
 import type { BatchConfig } from "./types/index.js";
 import { logger } from "./utils/logger.js";
@@ -109,10 +110,10 @@ async function processAppleDocuments(env: Env): Promise<void> {
   const dbManager = new PostgreSQLManager(sql);
 
   // Create KeyManager with D1 database
-  let keyManager: any;
+  let keyManager: KeyManager;
   try {
-    const KeyManager = (await import("./KeyManager.js")).KeyManager;
-    keyManager = new KeyManager(env.DB);
+    const KeyManagerClass = (await import("./KeyManager.js")).KeyManager;
+    keyManager = new KeyManagerClass(env.DB);
     logger.info("KeyManager initialized");
   } catch (error) {
     await logger.error(
