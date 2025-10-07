@@ -25,8 +25,9 @@ class PostgreSQLManager {
     if (urls.length === 0) return 0;
 
     const result = await this.sql`
-      INSERT INTO pages (url, collect_count)
-      SELECT * FROM ${this.sql(urls.map((url) => [url, 0]))}
+      INSERT INTO pages ${
+        this.sql(urls.map(url => ({ url, collect_count: 0 })))
+      }
       ON CONFLICT (url) DO NOTHING
     `;
 
