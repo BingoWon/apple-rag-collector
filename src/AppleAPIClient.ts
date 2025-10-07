@@ -79,21 +79,22 @@ class AppleAPIClient {
     }
   }
 
-  private validateDocumentData(data: any): void {
+  private validateDocumentData(data: unknown): void {
     if (!data || typeof data !== "object") {
       throw new Error("Invalid response: not an object");
     }
-    if (!data.primaryContentSections) {
+    const record = data as Record<string, unknown>;
+    if (!record["primaryContentSections"]) {
       throw new Error(
         "PERMANENT_ERROR:NO_PRIMARY_CONTENT:Missing primaryContentSections field"
       );
     }
-    if (!data.metadata) {
+    if (!record["metadata"]) {
       throw new Error("Invalid response: missing metadata field");
     }
 
     // Content quality validation - check for substantial content
-    const sections = data.primaryContentSections;
+    const sections = record["primaryContentSections"];
     if (!Array.isArray(sections) || sections.length === 0) {
       throw new Error("PERMANENT_ERROR:NO_SUBSTANTIAL_CONTENT:Empty sections");
     }
@@ -106,7 +107,10 @@ class AppleAPIClient {
 
       // Check content sections for non-link content
       if (kind === "content" && section.content) {
-        return section.content.some((item: any) => item.type !== "links");
+        return section.content.some(
+          (item: unknown) =>
+            (item as Record<string, unknown>)["type"] !== "links"
+        );
       }
 
       // Other section types are considered substantial
