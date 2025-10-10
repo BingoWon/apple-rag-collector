@@ -20,7 +20,7 @@ const SESSION_DIR = path.join(OUTPUT_DIR, TIMESTAMP);
 
 // Test URL
 const TEST_URL =
-  "https://developer.apple.com/documentation/foundation/nsurl/customplaygroundquicklook";
+  "https://developer.apple.com/documentation/foundationmodels/dynamicgenerationschema/init(arrayof:minimumelements:maximumelements:)";
 
 // Ensure output directory exists
 if (!fs.existsSync(OUTPUT_DIR)) {
