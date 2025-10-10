@@ -356,21 +356,47 @@ class ContentProcessor {
   }
 
   private renderDeclarations(section: any): { title: string; content: string } {
-    let content = "";
-    if (section.declarations && section.declarations.length > 0) {
-      section.declarations.forEach((declaration: any) => {
-        if (declaration.tokens && declaration.tokens.length > 0) {
-          const languages = declaration.languages || [];
-          const formattedDeclaration = this.formatFunctionDeclaration(
-            declaration.tokens,
-            languages
-          );
-          if (formattedDeclaration.trim()) {
-            content += `\`\`\`\n${formattedDeclaration}\n\`\`\`\n`;
+    if (!section.declarations?.length) {
+      return { title: "", content: "" };
+    }
+
+    const allDeclarations: string[] = [];
+
+    for (const declaration of section.declarations) {
+      const languages = declaration.languages || [];
+
+      // Process main declaration
+      if (declaration.tokens?.length) {
+        const formatted = this.formatFunctionDeclaration(
+          declaration.tokens,
+          languages
+        );
+        if (formatted.trim()) {
+          allDeclarations.push(formatted);
+        }
+      }
+
+      // Process method overloads from otherDeclarations
+      if (declaration.otherDeclarations?.declarations?.length) {
+        for (const overload of declaration.otherDeclarations.declarations) {
+          if (overload.tokens?.length) {
+            const formatted = this.formatFunctionDeclaration(
+              overload.tokens,
+              languages
+            );
+            if (formatted.trim()) {
+              allDeclarations.push(formatted);
+            }
           }
         }
-      });
+      }
     }
+
+    // Generate output with each declaration in its own code block
+    const content = allDeclarations
+      .map((decl) => `\`\`\`\n${decl}\n\`\`\``)
+      .join("\n\n");
+
     return { title: "", content };
   }
 
