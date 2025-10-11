@@ -360,10 +360,14 @@ class ContentProcessor {
       return { title: "", content: "" };
     }
 
-    const allDeclarations: string[] = [];
+    const allDeclarations: Array<{ platforms: string; code: string }> = [];
 
     for (const declaration of section.declarations) {
       const languages = declaration.languages || [];
+      const platforms = declaration.platforms || [];
+
+      // Format platform information
+      const platformLabel = platforms.length > 0 ? platforms.join(", ") : "";
 
       // Process main declaration
       if (declaration.tokens?.length) {
@@ -372,7 +376,10 @@ class ContentProcessor {
           languages
         );
         if (formatted.trim()) {
-          allDeclarations.push(formatted);
+          allDeclarations.push({
+            platforms: platformLabel,
+            code: formatted,
+          });
         }
       }
 
@@ -385,16 +392,24 @@ class ContentProcessor {
               languages
             );
             if (formatted.trim()) {
-              allDeclarations.push(formatted);
+              allDeclarations.push({
+                platforms: platformLabel,
+                code: formatted,
+              });
             }
           }
         }
       }
     }
 
-    // Generate output with each declaration in its own code block
+    // Generate output with platform labels and code blocks
     const content = allDeclarations
-      .map((decl) => `\`\`\`\n${decl}\n\`\`\``)
+      .map((decl) => {
+        if (decl.platforms) {
+          return `${decl.platforms}\n\n\`\`\`\n${decl.code}\n\`\`\``;
+        }
+        return `\`\`\`\n${decl.code}\n\`\`\``;
+      })
       .join("\n\n");
 
     return { title: "", content };
