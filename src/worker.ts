@@ -148,13 +148,12 @@ async function processAppleDocuments(env: Env): Promise<void> {
         error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
 
-      // Send detailed error notification via logger.error (which handles both logging and Telegram notification)
+      // Send compact error notification
       await logger.error(
-        `🚨 Batch Processing Error!\n\n` +
-          `**Batch**: ${i + 1}/${batchCount}\n` +
-          `**Error**: ${errorMessage}\n` +
-          `**Stack**: ${errorStack ? errorStack.substring(0, 500) : "N/A"}\n\n` +
-          `Continuing with next batch...`
+        `🚨 Batch ${i + 1}/${batchCount} Failed\n` +
+          `Error: ${errorMessage}\n` +
+          `Stack: ${errorStack?.substring(0, 300) || "N/A"}\n` +
+          `Status: Continuing...`
       );
       // Continue with next batch instead of failing completely
     }
@@ -169,41 +168,31 @@ async function processAppleDocuments(env: Env): Promise<void> {
     `Completed ${batchCount} batches in ${durationMinutes}m ${durationSeconds}s, ${totalChunksGenerated} chunks`
   );
 
-  // Send comprehensive completion notification with statistics (only in first 3 minutes of each hour)
+  // Send comprehensive completion notification (only in first 2 minutes of each hour)
   const now = new Date();
   const currentMinute = now.getMinutes();
 
-  // Only send notification if current time is within first XX minutes of the hour (0, 1, or 2)
   if (currentMinute < 2) {
     try {
-      const finalStats = await dbManager.getStats();
+      const stats = await dbManager.getStats();
+
+      // Compact statistics message with essential metrics only
       const statsMessage =
-        `✅ Apple RAG Collector Completed\n\n` +
-        `⏱️ Runtime: ${durationMinutes} minutes ${durationSeconds} seconds\n` +
-        `📊 Results: ${totalChunksGenerated} chunks generated\n\n` +
-        `📈 Current Statistics:\n` +
-        `• Total records: ${finalStats.total}\n` +
-        `• Collected: ${finalStats.collectedCount} (${finalStats.collectedPercentage})\n` +
-        `• Avg collect count: ${finalStats.avgCollectCount}\n` +
-        `• Range: ${finalStats.minCollectCount} - ${finalStats.maxCollectCount}\n` +
-        `• Total chunks: ${finalStats.totalChunks}\n\n` +
-        `📋 Pages Missing Data:\n` +
-        `• Missing content: ${finalStats.pagesMissingData.missingContentCount} (${finalStats.pagesMissingData.missingContentPercentage})\n` +
-        `• Missing title: ${finalStats.pagesMissingData.missingTitleCount} (${finalStats.pagesMissingData.missingTitlePercentage})\n\n` +
-        `🧩 Chunks Missing Data:\n` +
-        `• Missing content: ${finalStats.chunksMissingData.missingContentCount} (${finalStats.chunksMissingData.missingContentPercentage})\n` +
-        `• Missing title: ${finalStats.chunksMissingData.missingTitleCount} (${finalStats.chunksMissingData.missingTitlePercentage})\n\n` +
-        `⚙️ Configuration:\n` +
-        `• Batch size: ${config.batchSize}\n` +
-        `• Batch count: ${batchCount}\n` +
-        `• Total URLs this run: ${config.batchSize * batchCount}\n` +
-        `• Force update: ${config.forceUpdateAll ? "Yes" : "No"}`;
+        `✅ Collector Completed\n` +
+        `⏱️ ${durationMinutes}m ${durationSeconds}s | 📊 ${totalChunksGenerated} chunks\n\n` +
+        `📈 Database: ${stats.total} records | ${stats.collectedPercentage} collected\n` +
+        `📦 Chunks: ${stats.totalChunks} total | Avg collect: ${stats.avgCollectCount}\n` +
+        `🔄 Range: ${stats.minCollectCount}-${stats.maxCollectCount}\n\n` +
+        `⚠️ Missing Data:\n` +
+        `Pages: ${stats.pagesMissingData.missingContentPercentage} content, ${stats.pagesMissingData.missingTitlePercentage} title\n` +
+        `Chunks: ${stats.chunksMissingData.missingContentPercentage} content, ${stats.chunksMissingData.missingTitlePercentage} title\n\n` +
+        `⚙️ Config: ${config.batchSize}×${batchCount}=${config.batchSize * batchCount} URLs | Force: ${config.forceUpdateAll ? "Y" : "N"}`;
 
       logger.info(statsMessage);
       await notifyTelegram(statsMessage);
     } catch (error) {
       await logger.error(
-        `Failed to get final stats: ${error instanceof Error ? error.message : String(error)}`
+        `Stats retrieval failed: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }

@@ -307,10 +307,19 @@ class AppleDocCollector {
         `📝 Content changed: ${changedRecords.length} URLs (full processing)`
       );
 
-      // Send notification when content changes are detected (only when not in force update mode)
+      // Send compact notification when content changes are detected (only when not in force update mode)
       if (!this.config.forceUpdateAll) {
-        const changedUrls = changedRecords.map((r) => r.record.url).join("\n");
-        const message = `📝 Content updated: ${changedRecords.length} URLs changed\n\nUpdated URLs:\n${changedUrls}`;
+        const MAX_URLS_DISPLAY = 10;
+        const urlsToShow = changedRecords.slice(0, MAX_URLS_DISPLAY);
+        const remaining = changedRecords.length - MAX_URLS_DISPLAY;
+
+        const urlList = urlsToShow.map((r) => r.record.url).join("\n");
+        const remainingText = remaining > 0 ? `\n...and ${remaining} more` : "";
+
+        const message =
+          `📝 Content Updated: ${changedRecords.length} URLs\n\n` +
+          `${urlList}${remainingText}`;
+
         await notifyTelegram(message);
       }
 
