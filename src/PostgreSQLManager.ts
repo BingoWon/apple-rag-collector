@@ -24,9 +24,22 @@ class PostgreSQLManager {
   async batchInsertUrls(urls: string[]): Promise<number> {
     if (urls.length === 0) return 0;
 
+    // Query minimum collect_count from Apple Developer URLs (excluding 0)
+    // This ensures new URLs integrate into normal scheduling without causing starvation
+    const minResult = await this.sql`
+      SELECT COALESCE(
+        (SELECT MIN(collect_count)
+         FROM pages
+         WHERE url LIKE 'https://developer.apple.com/%'
+         AND collect_count > 0),
+        0
+      ) as min
+    `;
+    const minCollectCount = parseInt(minResult[0]?.["min"] || "0", 10);
+
     const result = await this.sql`
       INSERT INTO pages ${this.sql(
-        urls.map((url) => ({ url, collect_count: 0 }))
+        urls.map((url) => ({ url, collect_count: minCollectCount }))
       )}
       ON CONFLICT (url) DO NOTHING
     `;
