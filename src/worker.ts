@@ -172,7 +172,7 @@ async function processAppleDocuments(env: Env): Promise<void> {
   const now = new Date();
   const currentMinute = now.getMinutes();
 
-  if (currentMinute < 2) {
+  if (currentMinute < 6) {
     try {
       const stats = await dbManager.getStats();
 
