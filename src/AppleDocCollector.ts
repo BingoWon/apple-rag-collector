@@ -309,18 +309,26 @@ class AppleDocCollector {
 
       // Send compact notification when content changes are detected (only when not in force update mode)
       if (!this.config.forceUpdateAll) {
-        const MAX_URLS_DISPLAY = 10;
-        const urlsToShow = changedRecords.slice(0, MAX_URLS_DISPLAY);
-        const remaining = changedRecords.length - MAX_URLS_DISPLAY;
+        // Filter out first-fill records (where original content was empty)
+        const realChangedRecords = changedRecords.filter(
+          (r) => r.record.content !== ""
+        );
 
-        const urlList = urlsToShow.map((r) => r.record.url).join("\n");
-        const remainingText = remaining > 0 ? `\n...and ${remaining} more` : "";
+        if (realChangedRecords.length > 0) {
+          const MAX_URLS_DISPLAY = 10;
+          const urlsToShow = realChangedRecords.slice(0, MAX_URLS_DISPLAY);
+          const remaining = realChangedRecords.length - MAX_URLS_DISPLAY;
 
-        const message =
-          `📝 Content Updated: ${changedRecords.length} URLs\n\n` +
-          `${urlList}${remainingText}`;
+          const urlList = urlsToShow.map((r) => r.record.url).join("\n");
+          const remainingText =
+            remaining > 0 ? `\n...and ${remaining} more` : "";
 
-        await notifyTelegram(message);
+          const message =
+            `📝 Content Updated: ${realChangedRecords.length} URLs\n\n` +
+            `${urlList}${remainingText}`;
+
+          await notifyTelegram(message);
+        }
       }
 
       if (allChunks.length > 0) {
