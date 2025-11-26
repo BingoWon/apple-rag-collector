@@ -5,17 +5,12 @@
 
 import postgres from "postgres";
 import { AppleDocCollector } from "./AppleDocCollector.js";
-import type { KeyManager } from "./KeyManager.js";
 import { PostgreSQLManager } from "./PostgreSQLManager.js";
 import type { BatchConfig } from "./types/index.js";
 import { logger } from "./utils/logger.js";
-import {
-  configureTelegram,
-  notifyTelegram,
-} from "./utils/telegram-notifier.js";
+import { configureTelegram, notifyStats } from "./utils/telegram-notifier.js";
 
 interface Env {
-  DB: D1Database;
   DB_HOST: string;
   DB_PORT: string;
   DB_NAME: string;
@@ -24,13 +19,11 @@ interface Env {
   DB_SSL: string;
   BATCH_SIZE: string;
   BATCH_COUNT: string;
+  DEEPINFRA_API_KEY: string;
 
   FORCE_UPDATE_ALL?: string;
-  TELEGRAM_BOT_URL?: string;
-  EMBEDDING_MODEL?: string;
-  EMBEDDING_DIM?: string;
-  EMBEDDING_API_BASE_URL?: string;
-  EMBEDDING_API_TIMEOUT?: string;
+  TELEGRAM_STATS_BOT_URL?: string;
+  TELEGRAM_ALERT_BOT_URL?: string;
 }
 
 export default {
@@ -39,7 +32,7 @@ export default {
     env: Env,
     _ctx: ExecutionContext
   ): Promise<void> {
-    configureTelegram(env.TELEGRAM_BOT_URL);
+    configureTelegram(env.TELEGRAM_STATS_BOT_URL, env.TELEGRAM_ALERT_BOT_URL);
 
     try {
       await processAppleDocuments(env);
@@ -59,7 +52,7 @@ export default {
     }
 
     if (url.pathname === "/trigger" && request.method === "POST") {
-      configureTelegram(env.TELEGRAM_BOT_URL);
+      configureTelegram(env.TELEGRAM_STATS_BOT_URL, env.TELEGRAM_ALERT_BOT_URL);
 
       try {
         await processAppleDocuments(env);
@@ -108,21 +101,11 @@ async function processAppleDocuments(env: Env): Promise<void> {
   await sql`SET idle_in_transaction_session_timeout = '180s'`; // 3 minute idle transaction timeout
 
   const dbManager = new PostgreSQLManager(sql);
-
-  // Create KeyManager with D1 database
-  let keyManager: KeyManager;
-  try {
-    const KeyManagerClass = (await import("./KeyManager.js")).KeyManager;
-    keyManager = new KeyManagerClass(env.DB);
-    logger.info("KeyManager initialized");
-  } catch (error) {
-    await logger.error(
-      `KeyManager initialization failed: ${error instanceof Error ? error.message : String(error)}`
-    );
-    throw error;
-  }
-
-  const collector = new AppleDocCollector(dbManager, keyManager, config, env);
+  const collector = new AppleDocCollector(
+    dbManager,
+    env.DEEPINFRA_API_KEY,
+    config
+  );
 
   const batchCount = parseInt(env.BATCH_COUNT || "30", 10);
 
@@ -189,7 +172,7 @@ async function processAppleDocuments(env: Env): Promise<void> {
         `⚙️ Config: ${config.batchSize}×${batchCount}=${config.batchSize * batchCount} URLs | Force: ${config.forceUpdateAll ? "Y" : "N"}`;
 
       logger.info(statsMessage);
-      await notifyTelegram(statsMessage);
+      await notifyStats(statsMessage);
     } catch (error) {
       await logger.error(
         `Stats retrieval failed: ${error instanceof Error ? error.message : String(error)}`

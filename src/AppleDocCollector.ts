@@ -2,7 +2,6 @@ import { AppleAPIClient } from "./AppleAPIClient.js";
 import { Chunker } from "./Chunker.js";
 import { ContentProcessor } from "./ContentProcessor.js";
 import { createEmbeddings } from "./EmbeddingProvider.js";
-import type { KeyManager } from "./KeyManager.js";
 import type { PostgreSQLManager } from "./PostgreSQLManager.js";
 import type {
   BatchConfig,
@@ -12,7 +11,7 @@ import type {
 } from "./types/index.js";
 import { BatchErrorHandler } from "./utils/batch-error-handler.js";
 import { logger } from "./utils/logger.js";
-import { notifyTelegram } from "./utils/telegram-notifier.js";
+import { notifyStats } from "./utils/telegram-notifier.js";
 
 interface ProcessBatchResult {
   successRecords: DatabaseRecord[];
@@ -44,33 +43,18 @@ class AppleDocCollector {
   private readonly contentProcessor: ContentProcessor;
   private readonly chunker: Chunker;
   private readonly dbManager: PostgreSQLManager;
-  private readonly keyManager: KeyManager;
+  private readonly apiKey: string;
   private readonly config: BatchConfig;
-  private readonly env:
-    | {
-        EMBEDDING_MODEL?: string;
-        EMBEDDING_DIM?: string;
-        EMBEDDING_API_BASE_URL?: string;
-        EMBEDDING_API_TIMEOUT?: string;
-      }
-    | undefined;
   private batchCounter: number = 0;
 
   constructor(
     dbManager: PostgreSQLManager,
-    keyManager: KeyManager,
-    config: BatchConfig,
-    env?: {
-      EMBEDDING_MODEL?: string;
-      EMBEDDING_DIM?: string;
-      EMBEDDING_API_BASE_URL?: string;
-      EMBEDDING_API_TIMEOUT?: string;
-    }
+    apiKey: string,
+    config: BatchConfig
   ) {
     this.dbManager = dbManager;
-    this.keyManager = keyManager;
+    this.apiKey = apiKey;
     this.config = config;
-    this.env = env;
     this.apiClient = new AppleAPIClient();
     this.contentProcessor = new ContentProcessor();
     this.chunker = new Chunker(config);
@@ -327,7 +311,7 @@ class AppleDocCollector {
             `📝 Content Updated: ${realChangedRecords.length} URLs\n\n` +
             `${urlList}${remainingText}`;
 
-          await notifyTelegram(message);
+          await notifyStats(message);
         }
       }
 
@@ -445,7 +429,7 @@ class AppleDocCollector {
 
     const embeddings =
       embeddingTexts.length > 0
-        ? await createEmbeddings(embeddingTexts, this.keyManager, this.env)
+        ? await createEmbeddings(embeddingTexts, this.apiKey)
         : [];
 
     return { allChunks, embeddings };

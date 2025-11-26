@@ -1,4 +1,4 @@
-import { notifyTelegram } from "./telegram-notifier.js";
+import { notifyAlert } from "./telegram-notifier.js";
 
 class Logger {
   info(message: string): void {
@@ -11,10 +11,8 @@ class Logger {
 
   async error(message: string): Promise<void> {
     console.error(message);
-    await notifyTelegram(message);
+    await notifyAlert(message);
   }
 }
 
-const logger = new Logger();
-
-export { logger };
+export const logger = new Logger();

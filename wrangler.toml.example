@@ -2,84 +2,42 @@
 # Copy this file to wrangler.toml and fill in your own values
 
 name = "your-apple-rag-collector"
-main = "dist/worker.js"
-compatibility_date = "2024-12-01"
+main = "src/worker.ts"
+compatibility_date = "2024-09-01"
+compatibility_flags = ["nodejs_compat"]
 
-# Cron trigger - runs every 5 minutes
-[[triggers]]
-schedule = "*/5 * * * *"
+[build]
+command = "pnpm build"
 
-# D1 Database binding (optional - for API key management)
-# Create your own D1 database and replace with your database name
-[[d1_databases]]
-binding = "DB"
-database_name = "your-d1-database-name"
-database_id = "your-d1-database-id"
+[observability]
+enabled = true
+head_sampling_rate = 1
 
-# Environment Variables Configuration
+[placement]
+mode = "smart"
+
+[triggers]
+crons = ["*/6 * * * *"]
+
+# Environment Variables
 [vars]
-
-# PostgreSQL Database Configuration
-# Replace with your own PostgreSQL database credentials
+# PostgreSQL Database
 DB_HOST = "your-postgres-host"
 DB_PORT = "5432"
 DB_NAME = "your-database-name"
 DB_USER = "your-database-user"
 DB_PASSWORD = "your-database-password"
-DB_SSL = "true"  # Set to "false" for local development
+DB_SSL = "true"
 
-# Cloudflare Worker Request Limits Configuration
-# Choose configuration based on your Cloudflare Workers plan:
-#
-# Workers Free Plan (50 subrequests/request):
-# BATCH_SIZE = "10"    # 10 URLs per batch
-# BATCH_COUNT = "5"    # 5 batches total
-# Total: 10 × 5 = 50 requests (at limit)
-#
-# Workers Paid Plan (1000 subrequests/request):
-# BATCH_SIZE = "60"    # 60 URLs per batch
-# BATCH_COUNT = "15"   # 15 batches total
-# Total: 60 × 15 = 900 requests (safely under 1000 limit)
-
-# Current configuration (optimized for 5-minute intervals)
-# BATCH_SIZE: Number of URLs processed in each batch (每个批次处理的URL数量)
+# Batch Processing (paid plan: max 1000 requests)
+# Total = BATCH_SIZE × BATCH_COUNT = 60 × 15 = 900
 BATCH_SIZE = "60"
-# BATCH_COUNT: Total number of batches to process (总共处理的批次数量)
 BATCH_COUNT = "15"
-
-# Processing Configuration
-FORCE_UPDATE_ALL = "true"  # Set to "true" to force update all URLs regardless of changes
-
-# Embedding API Configuration (for vector generation)
-# Replace with your preferred embedding service
-EMBEDDING_MODEL = "your-embedding-model"  # e.g., "text-embedding-ada-002"
-EMBEDDING_DIM = "2560"  # Embedding dimension (depends on your model)
-EMBEDDING_API_BASE_URL = "https://your-embedding-api-endpoint"
-EMBEDDING_API_TIMEOUT = "30"  # Timeout in seconds
-
-# Telegram Bot Configuration (optional - for notifications)
-# Create a Telegram bot and get the bot token and chat ID
-# Format: https://api.telegram.org/bot{BOT_TOKEN}/sendMessage?chat_id={CHAT_ID}
-TELEGRAM_BOT_URL = "https://api.telegram.org/bot{YOUR_BOT_TOKEN}/sendMessage?chat_id={YOUR_CHAT_ID}"
-
-# Build Configuration
-[build]
-command = "pnpm build"
-
-# Cloudflare Workers Logs Configuration
-[observability]
-enabled = true
-head_sampling_rate = 1  # 100% sampling rate for all requests
-
-# Smart Placement Configuration
-# Automatically places Worker closer to your database for better performance
-[placement]
-mode = "smart"
-
-# Development Configuration
-[env.development.vars]
 FORCE_UPDATE_ALL = "false"
 
-# Production Configuration
-[env.production.vars]
-FORCE_UPDATE_ALL = "false"
+# Telegram Notifications (optional)
+TELEGRAM_STATS_BOT_URL = "https://api.telegram.org/bot{STATS_BOT_TOKEN}/sendMessage?chat_id={CHAT_ID}"
+TELEGRAM_ALERT_BOT_URL = "https://api.telegram.org/bot{ALERT_BOT_TOKEN}/sendMessage?chat_id={CHAT_ID}"
+
+# Secrets (add via wrangler CLI, not in this file)
+# wrangler secret put DEEPINFRA_API_KEY
