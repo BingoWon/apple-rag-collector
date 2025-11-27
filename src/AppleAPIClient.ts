@@ -1,4 +1,8 @@
-import type { AppleAPIResponse, BatchResult } from "./types/index.js";
+import type {
+  AppleAPIResponse,
+  BatchResult,
+  VideoContent,
+} from "./types/index.js";
 import { BatchErrorHandler } from "./utils/batch-error-handler.js";
 
 class AppleAPIClient {
@@ -14,11 +18,95 @@ class AppleAPIClient {
     docc: "https://www.swift.org/data/documentation",
     default: "https://developer.apple.com/tutorials/data",
   };
+  private static readonly ALL_VIDEOS_URL =
+    "https://developer.apple.com/videos/all-videos/";
+
+  /**
+   * Discover all video URLs from Apple Developer Videos
+   */
+  async discoverVideoUrls(): Promise<string[]> {
+    const response = await fetch(AppleAPIClient.ALL_VIDEOS_URL, {
+      headers: {
+        ...AppleAPIClient.DEFAULT_HEADERS,
+        Accept: "text/html",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch all-videos page: HTTP ${response.status}`
+      );
+    }
+
+    const html = await response.text();
+    const pattern = /href="(\/videos\/play\/[^"]+)"/g;
+    const matches = html.matchAll(pattern);
+    const urls = [...matches].map(
+      (match) => `https://developer.apple.com${match[1]!.replace(/\/$/, "")}`
+    );
+
+    return [...new Set(urls)]; // Deduplicate
+  }
+
+  /**
+   * Fetch video transcripts
+   */
+  async fetchVideos(urls: string[]): Promise<BatchResult<VideoContent>[]> {
+    return await Promise.all(urls.map((url) => this.fetchSingleVideo(url)));
+  }
+
+  private async fetchSingleVideo(
+    videoUrl: string
+  ): Promise<BatchResult<VideoContent>> {
+    return BatchErrorHandler.safeExecute(videoUrl, async () => {
+      const response = await fetch(videoUrl, {
+        headers: {
+          ...AppleAPIClient.DEFAULT_HEADERS,
+          Accept: "text/html",
+        },
+      });
+
+      if (AppleAPIClient.PERMANENT_ERROR_CODES.includes(response.status)) {
+        throw new Error(`PERMANENT_ERROR:${response.status}:${videoUrl}`);
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const html = await response.text();
+
+      // Extract title
+      const titleMatch = html.match(
+        /<meta[^>]+property="og:title"[^>]+content="([^"]+)"/
+      );
+      const title = titleMatch?.[1] ?? "";
+
+      // Extract transcript - error if not found
+      const transcriptMatch = html.match(
+        /<section id="transcript-content">([\s\S]*?)<\/section>/
+      );
+      if (!transcriptMatch) {
+        throw new Error(`PERMANENT_ERROR:NO_TRANSCRIPT:${videoUrl}`);
+      }
+
+      const segmentPattern = /data-start="[0-9.]+"[^>]*>([^<]*)/g;
+      const segmentMatches = transcriptMatch[1]!.matchAll(segmentPattern);
+      const segments = [...segmentMatches]
+        .map((m) => m[1]!.trim())
+        .filter((text) => text);
+
+      if (segments.length === 0) {
+        throw new Error(`PERMANENT_ERROR:EMPTY_TRANSCRIPT:${videoUrl}`);
+      }
+
+      return { title: title || null, content: segments.join(" ") };
+    });
+  }
 
   async fetchDocuments(
     urls: string[]
   ): Promise<BatchResult<AppleAPIResponse>[]> {
-    // Direct concurrent fetching - no sub-batching needed
     return await Promise.all(urls.map((url) => this.fetchSingleDocument(url)));
   }
 
@@ -47,8 +135,6 @@ class AppleAPIClient {
       }
     );
 
-    // Fetch fails will be packed into the result.error field and notified via Telegram.
-    // No need to log error here.
     return result;
   }
 

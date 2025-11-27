@@ -47,6 +47,40 @@ class PostgreSQLManager {
     return result.count;
   }
 
+  /**
+   * Get video records that need transcript collection (empty content)
+   */
+  async getVideoRecordsToProcess(batchSize: number): Promise<DatabaseRecord[]> {
+    const result = await this.sql`
+      SELECT * FROM pages
+      WHERE url LIKE 'https://developer.apple.com/videos/play/%'
+        AND (content IS NULL OR content = '')
+      ORDER BY url ASC
+      LIMIT ${batchSize}
+      FOR UPDATE SKIP LOCKED
+    `;
+
+    return result.map((row: any) => ({
+      ...row,
+      raw_json: row.raw_json === undefined ? null : row.raw_json,
+      collect_count: Number(row.collect_count),
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    })) as DatabaseRecord[];
+  }
+
+  /**
+   * Get count of videos pending processing
+   */
+  async getVideoPendingCount(): Promise<number> {
+    const result = await this.sql`
+      SELECT COUNT(*) as count FROM pages
+      WHERE url LIKE 'https://developer.apple.com/videos/play/%'
+        AND (content IS NULL OR content = '')
+    `;
+    return parseInt(result[0]?.["count"] || "0", 10);
+  }
+
   async getBatchRecords(batchSize: number): Promise<DatabaseRecord[]> {
     // Atomic operation: SELECT records with minimum collect_count and UPDATE them
     // This ensures different workers get different records by always taking the minimum collect_count

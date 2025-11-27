@@ -1,6 +1,6 @@
 /**
  * Cloudflare Worker entry point for Apple RAG Collector
- * Executes batch processing on cron schedule (every 5 minutes)
+ * Executes batch processing on cron schedule
  */
 
 import postgres from "postgres";
@@ -35,7 +35,7 @@ export default {
     configureTelegram(env.TELEGRAM_STATS_BOT_URL, env.TELEGRAM_ALERT_BOT_URL);
 
     try {
-      await processAppleDocuments(env);
+      await processAppleContent(env);
     } catch (error) {
       await logger.error(
         `Worker execution failed: ${error instanceof Error ? error.message : String(error)}`
@@ -55,7 +55,7 @@ export default {
       configureTelegram(env.TELEGRAM_STATS_BOT_URL, env.TELEGRAM_ALERT_BOT_URL);
 
       try {
-        await processAppleDocuments(env);
+        await processAppleContent(env);
         return new Response("Processing completed", { status: 200 });
       } catch (error) {
         await logger.error(
@@ -69,7 +69,7 @@ export default {
   },
 };
 
-async function processAppleDocuments(env: Env): Promise<void> {
+async function processAppleContent(env: Env): Promise<void> {
   const config: BatchConfig = {
     batchSize: parseInt(env.BATCH_SIZE || "30", 10),
     forceUpdateAll: env.FORCE_UPDATE_ALL === "true",
@@ -86,19 +86,18 @@ async function processAppleDocuments(env: Env): Promise<void> {
     username: env.DB_USER,
     password: env.DB_PASSWORD || "",
     ssl: env.DB_SSL === "true",
-    max: 3, // Increased from 1 to reduce connection bottleneck
-    idle_timeout: 30, // Increased from 20 to 30 seconds
-    connect_timeout: 15, // Increased from 10 to 15 seconds
+    max: 3,
+    idle_timeout: 30,
+    connect_timeout: 60,
     transform: {
       undefined: null,
     },
-    onnotice: () => {}, // Suppress PostgreSQL notices
+    onnotice: () => {},
   });
 
-  // Configure PostgreSQL session-level timeouts to prevent lock timeouts
-  await sql`SET statement_timeout = '120s'`; // 120 second statement timeout
-  await sql`SET lock_timeout = '60s'`; // 60 second lock timeout to prevent "canceling statement due to lock timeout"
-  await sql`SET idle_in_transaction_session_timeout = '180s'`; // 3 minute idle transaction timeout
+  await sql`SET statement_timeout = '120s'`;
+  await sql`SET lock_timeout = '60s'`;
+  await sql`SET idle_in_transaction_session_timeout = '180s'`;
 
   const dbManager = new PostgreSQLManager(sql);
   const collector = new AppleDocCollector(
@@ -108,12 +107,29 @@ async function processAppleDocuments(env: Env): Promise<void> {
   );
 
   const batchCount = parseInt(env.BATCH_COUNT || "30", 10);
+  const startTime = Date.now();
 
+  // Phase 1: Video Discovery and Processing
+  try {
+    const newVideos = await collector.discoverVideos();
+    const videoResult = await collector.processVideos();
+
+    if (newVideos > 0 || videoResult.processed > 0) {
+      logger.info(
+        `🎬 Videos: ${newVideos} discovered, ${videoResult.processed} processed, ${videoResult.chunks} chunks`
+      );
+    }
+  } catch (error) {
+    await logger.error(
+      `🎬 Video processing failed: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+
+  // Phase 2: Document Batch Processing
   logger.info(
     `Starting ${batchCount} batches × ${config.batchSize} URLs = ${config.batchSize * batchCount} total`
   );
 
-  const startTime = Date.now();
   let totalChunksGenerated = 0;
 
   for (let i = 0; i < batchCount; i++) {
@@ -131,14 +147,12 @@ async function processAppleDocuments(env: Env): Promise<void> {
         error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
 
-      // Send compact error notification
       await logger.error(
         `🚨 Batch ${i + 1}/${batchCount} Failed\n` +
           `Error: ${errorMessage}\n` +
           `Stack: ${errorStack?.substring(0, 300) || "N/A"}\n` +
           `Status: Continuing...`
       );
-      // Continue with next batch instead of failing completely
     }
   }
 
@@ -151,7 +165,6 @@ async function processAppleDocuments(env: Env): Promise<void> {
     `Completed ${batchCount} batches in ${durationMinutes}m ${durationSeconds}s, ${totalChunksGenerated} chunks`
   );
 
-  // Send comprehensive completion notification (only in first 2 minutes of each hour)
   const now = new Date();
   const currentMinute = now.getMinutes();
 
@@ -159,7 +172,6 @@ async function processAppleDocuments(env: Env): Promise<void> {
     try {
       const stats = await dbManager.getStats();
 
-      // Compact statistics message with essential metrics only
       const statsMessage =
         `✅ Collector Completed\n` +
         `⏱️ ${durationMinutes}m ${durationSeconds}s | 📊 ${totalChunksGenerated} chunks\n\n` +
@@ -180,6 +192,5 @@ async function processAppleDocuments(env: Env): Promise<void> {
     }
   }
 
-  // Close database connection
   await dbManager.close();
 }

@@ -46,6 +46,12 @@ interface DocumentContent {
   readonly extractedUrls: readonly string[];
 }
 
+// Video content interface (transcript)
+interface VideoContent {
+  readonly title: string | null;
+  readonly content: string;
+}
+
 // Chunk record interface for vector storage
 interface ChunkRecord {
   readonly id: string;
@@ -133,6 +139,7 @@ export type {
   AppConfig,
   DatabaseRecord,
   DocumentContent,
+  VideoContent,
   ContentSection,
   AppleAPIResponse,
   DatabaseStats,

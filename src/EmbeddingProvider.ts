@@ -7,9 +7,9 @@ import { logger } from "./utils/logger.js";
 
 const DEEPINFRA_CONFIG = {
   API_URL: "https://api.deepinfra.com/v1/openai/embeddings",
-  MODEL: "Qwen/Qwen3-Embedding-4B",
+  MODEL: "Qwen/Qwen3-Embedding-4B-batch",
   DIMENSION: 2560,
-  TIMEOUT_MS: 7_000,
+  TIMEOUT_MS: 30_000,
 } as const;
 
 export class BatchEmbeddingProvider {

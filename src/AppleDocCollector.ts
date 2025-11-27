@@ -60,14 +60,145 @@ class AppleDocCollector {
     this.chunker = new Chunker(config);
   }
 
+  /**
+   * Discover and sync all video URLs to database
+   * Returns count of newly inserted video URLs
+   */
+  async discoverVideos(): Promise<number> {
+    const videoUrls = await this.apiClient.discoverVideoUrls();
+    const inserted = await this.dbManager.batchInsertUrls(videoUrls);
+
+    if (inserted > 0) {
+      logger.info(`🎬 Video discovery: ${inserted} new videos added`);
+    }
+
+    return inserted;
+  }
+
+  /**
+   * Process pending videos (those with empty content)
+   */
+  async processVideos(): Promise<{ processed: number; chunks: number }> {
+    const pendingCount = await this.dbManager.getVideoPendingCount();
+    if (pendingCount === 0) {
+      return { processed: 0, chunks: 0 };
+    }
+
+    logger.info(`🎬 Processing ${pendingCount} pending videos`);
+
+    let totalProcessed = 0;
+    let totalChunks = 0;
+
+    // Process videos in batches
+    while (true) {
+      const records = await this.dbManager.getVideoRecordsToProcess(
+        this.config.batchSize
+      );
+
+      if (records.length === 0) break;
+
+      const result = await this.processVideoBatch(records);
+      totalProcessed += result.processed;
+      totalChunks += result.chunks;
+
+      logger.info(
+        `🎬 Video batch: ${result.processed}/${records.length} processed, ${result.chunks} chunks`
+      );
+    }
+
+    if (totalProcessed > 0) {
+      logger.info(
+        `🎬 Video processing complete: ${totalProcessed} videos, ${totalChunks} chunks`
+      );
+    }
+
+    return { processed: totalProcessed, chunks: totalChunks };
+  }
+
+  private async processVideoBatch(
+    records: DatabaseRecord[]
+  ): Promise<{ processed: number; chunks: number }> {
+    const urls = records.map((r) => r.url);
+    const results = await this.apiClient.fetchVideos(urls);
+
+    const successRecords: DatabaseRecord[] = [];
+    const deleteIds: string[] = [];
+    const contentItems: Array<{
+      url: string;
+      title: string | null;
+      content: string;
+    }> = [];
+
+    for (let i = 0; i < records.length; i++) {
+      const record = records[i]!;
+      const result = results[i]!;
+
+      if (result.error) {
+        if (BatchErrorHandler.isPermanentError(result.error)) {
+          deleteIds.push(record.id);
+          // Silent handling for videos without transcripts
+        }
+        continue;
+      }
+
+      if (result.data) {
+        successRecords.push(record);
+        contentItems.push({
+          url: record.url,
+          title: result.data.title,
+          content: result.data.content,
+        });
+      }
+    }
+
+    if (deleteIds.length > 0) {
+      await this.dbManager.deleteRecords(deleteIds);
+    }
+
+    if (contentItems.length === 0) {
+      return { processed: 0, chunks: 0 };
+    }
+
+    // Reuse unified chunk and embedding generation
+    const processResults = contentItems.map((item) => ({
+      url: item.url,
+      data: { title: item.title, content: item.content },
+    }));
+
+    const { allChunks, embeddings } =
+      await this.generateChunksAndEmbeddings(processResults);
+
+    if (allChunks.length > 0) {
+      const chunksWithEmbeddings = allChunks.map((item, index) => ({
+        url: item.url,
+        title: item.chunk.title,
+        content: item.chunk.content,
+        embedding: embeddings[index] || [],
+        chunk_index: item.chunk.chunk_index,
+        total_chunks: item.chunk.total_chunks,
+      }));
+
+      await this.dbManager.insertChunks(chunksWithEmbeddings);
+    }
+
+    const updatedRecords = successRecords.map((record, index) => ({
+      ...record,
+      updated_at: new Date(),
+      raw_json: null,
+      title: contentItems[index]!.title,
+      content: contentItems[index]!.content,
+    }));
+
+    await this.dbManager.batchUpdateFullRecords(updatedRecords);
+
+    return { processed: successRecords.length, chunks: allChunks.length };
+  }
+
   async execute(): Promise<{
     batchNumber: number;
     totalChunks: number;
   }> {
     const records = await this.dbManager.getBatchRecords(this.config.batchSize);
-
-    // Note: records.length === 0 never occurs in continuous processing
-    // Database always contains URLs to process with incremented collect_count
 
     this.batchCounter++;
     const startTime = Date.now();
@@ -77,10 +208,6 @@ class AppleDocCollector {
     );
 
     const result = await this.processBatch(records);
-
-    // Records are updated via intelligent field update strategy:
-    // - Changed records: full update via batchUpdateFullRecords (including updated_at)
-    // - Unchanged/Error records: no database update needed (collect_count already updated in getBatchRecords)
 
     if (result.extractedUrls.size > 0) {
       await this.dbManager.batchInsertUrls([...result.extractedUrls]);
@@ -104,7 +231,6 @@ class AppleDocCollector {
     const urls = records.map((r) => r.url);
     const collectResults = await this.apiClient.fetchDocuments(urls);
 
-    // Unified processing plan creation (now async)
     const processingPlan = await this.createProcessingPlan(
       records,
       collectResults
@@ -112,7 +238,6 @@ class AppleDocCollector {
     return await this.executeProcessingPlan(processingPlan);
   }
 
-  // Optimized processing plan creation - process only valid data, then compare
   private async createProcessingPlan(
     records: DatabaseRecord[],
     collectResults: BatchResult<any>[]
@@ -121,7 +246,6 @@ class AppleDocCollector {
       logger.info(`🔄 Force Update: Processing all ${records.length} URLs`);
     }
 
-    // Create index mapping for valid results only
     const validIndices: number[] = [];
     const validCollectResults = collectResults.filter((result, index) => {
       if (result.data) {
@@ -131,13 +255,11 @@ class AppleDocCollector {
       return false;
     });
 
-    // Process only valid results
     const processResults =
       validCollectResults.length > 0
         ? await this.contentProcessor.processDocuments(validCollectResults)
         : [];
 
-    // Create result mapping
     const processResultMap = new Map<number, any>();
     validIndices.forEach((originalIndex, processIndex) => {
       processResultMap.set(originalIndex, processResults[processIndex]);
@@ -188,7 +310,6 @@ class AppleDocCollector {
     const newRawJson = JSON.stringify(collectResult.data);
     const comparison = this.compareContent(record, processResult);
 
-    // Log differences for debugging
     this.logContentChanges(record.url, comparison);
 
     return {
@@ -196,11 +317,10 @@ class AppleDocCollector {
       collectResult,
       hasChanged: comparison.hasChanged,
       newRawJson,
-      processResult, // Add processed result to plan item
+      processResult,
     };
   }
 
-  // Optimized content comparison - based on processed results
   private compareContent(
     oldRecord: DatabaseRecord,
     processResult?: BatchResult<DocumentContent>
@@ -209,7 +329,6 @@ class AppleDocCollector {
       return { hasChanged: true };
     }
 
-    // Compare with already processed content (no duplicate processing)
     if (!processResult?.data) {
       return { hasChanged: false };
     }
@@ -217,7 +336,6 @@ class AppleDocCollector {
     const newTitle = processResult.data.title;
     const newContent = processResult.data.content;
 
-    // Compare actual content fields
     const titleChanged = oldRecord.title !== newTitle;
     const contentChanged = oldRecord.content !== newContent;
     const hasChanged = titleChanged || contentChanged;
@@ -248,7 +366,6 @@ class AppleDocCollector {
       !this.config.forceUpdateAll &&
       comparison.difference
     ) {
-      // Consolidated debug output in a single log entry
       const consolidatedMessage = [
         `📝 Content change detected for ${url}:`,
         `${comparison.difference}`,
@@ -277,7 +394,6 @@ class AppleDocCollector {
     );
     const errorRecords = processingPlan.filter((r) => r.error);
 
-    // Use already processed results (no duplicate processing)
     const processResults = changedRecords
       .map((r) => r.processResult)
       .filter(Boolean);
@@ -285,15 +401,12 @@ class AppleDocCollector {
     const { allChunks, embeddings } =
       await this.generateChunksAndEmbeddings(processResults);
 
-    // Store changed chunks and update records with full content
     if (changedRecords.length > 0) {
       logger.info(
         `📝 Content changed: ${changedRecords.length} URLs (full processing)`
       );
 
-      // Send compact notification when content changes are detected (only when not in force update mode)
       if (!this.config.forceUpdateAll) {
-        // Filter out first-fill records (where original content was empty)
         const realChangedRecords = changedRecords.filter(
           (r) => r.record.content !== ""
         );
@@ -327,8 +440,6 @@ class AppleDocCollector {
         await this.dbManager.insertChunks(chunksWithEmbeddings);
       }
 
-      // Update changed records with full content and updated_at
-      // Note: collect_count already incremented in getBatchRecords() and doesn't need updating
       await this.dbManager.batchUpdateFullRecords(
         changedRecords.map((r) => {
           return {
@@ -342,15 +453,12 @@ class AppleDocCollector {
       );
     }
 
-    // Unchanged records: no database update needed
-    // Note: collect_count already incremented in getBatchRecords() for concurrency safety
     if (unchangedRecords.length > 0) {
       logger.info(
         `🔄 Content unchanged: ${unchangedRecords.length} URLs (no database update needed)`
       );
     }
 
-    // Separate permanent and temporary errors
     const permanentErrorRecords = errorRecords.filter(
       (r) => r.isPermanentError
     );
@@ -358,7 +466,6 @@ class AppleDocCollector {
       (r) => !r.isPermanentError
     );
 
-    // Delete permanent error records (404, 403, 410), no primary content
     if (permanentErrorRecords.length > 0) {
       const permanentUrls = permanentErrorRecords
         .map((r) => `${r.record.url} (${r.error})`)
@@ -372,8 +479,6 @@ class AppleDocCollector {
       );
     }
 
-    // Temporary error records: no database update needed
-    // Note: collect_count already incremented in getBatchRecords() for concurrency safety
     if (temporaryErrorRecords.length > 0) {
       const temporaryUrls = temporaryErrorRecords
         .map((r) => `${r.record.url} (${r.error})`)
@@ -402,7 +507,6 @@ class AppleDocCollector {
     }>;
     embeddings: number[][];
   }> {
-    // Generate chunks using the chunker
     const chunkResults =
       processResults.length > 0
         ? this.chunker.chunkTexts(
@@ -420,7 +524,6 @@ class AppleDocCollector {
       r.data ? r.data.map((chunk) => ({ url: r.url, chunk })) : []
     );
 
-    // Generate embeddings
     const embeddingTexts = allChunks.map((c) => {
       return c.chunk.title
         ? `${c.chunk.title}\n\n${c.chunk.content}`
@@ -457,15 +560,12 @@ class AppleDocCollector {
       const { record, collectResult, hasChanged, error } = planItem;
 
       if (error) {
-        // Error records: collect_count already updated in getBatchRecords, return original for result tracking
         failureRecords.push(record);
         continue;
       }
 
-      // Success records: updated via appropriate method, return original for result tracking
       successRecords.push(record);
 
-      // Extract URLs only from changed records that were processed
       if (
         hasChanged &&
         collectResult?.data &&
