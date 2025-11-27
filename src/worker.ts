@@ -120,9 +120,13 @@ async function processAppleContent(env: Env): Promise<void> {
       );
     }
   } catch (error) {
-    await logger.error(
-      `🎬 Video processing failed: ${error instanceof Error ? error.message : String(error)}`
-    );
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    // HTTP 524 (Cloudflare timeout) - silent warning only
+    if (errorMessage.includes("HTTP 524")) {
+      logger.warn(`🎬 Video discovery skipped (timeout): ${errorMessage}`);
+    } else {
+      await logger.error(`🎬 Video processing failed: ${errorMessage}`);
+    }
   }
 
   // Phase 2: Document Batch Processing
@@ -168,7 +172,7 @@ async function processAppleContent(env: Env): Promise<void> {
   const now = new Date();
   const currentMinute = now.getMinutes();
 
-  if (currentMinute < 6) {
+  if (currentMinute < 5) {
     try {
       const stats = await dbManager.getStats();
 
