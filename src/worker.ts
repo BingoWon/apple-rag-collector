@@ -175,12 +175,10 @@ async function processAppleContent(env: Env): Promise<void> {
       const statsMessage =
         `✅ Collector Completed\n` +
         `⏱️ ${durationMinutes}m ${durationSeconds}s | 📊 ${totalChunksGenerated} chunks\n\n` +
-        `📈 Database: ${stats.total} records | ${stats.collectedPercentage} collected\n` +
+        `📄 Docs: ${stats.docs.total} | ${stats.docs.collectedPercentage} collected\n` +
+        `🎬 Videos: ${stats.videos.total} | ${stats.videos.collectedPercentage} collected\n` +
         `📦 Chunks: ${stats.totalChunks} total | Avg collect: ${stats.avgCollectCount}\n` +
         `🔄 Range: ${stats.minCollectCount}-${stats.maxCollectCount}\n\n` +
-        `⚠️ Missing Data:\n` +
-        `Pages: ${stats.pagesMissingData.missingContentPercentage} content, ${stats.pagesMissingData.missingTitlePercentage} title\n` +
-        `Chunks: ${stats.chunksMissingData.missingContentPercentage} content, ${stats.chunksMissingData.missingTitlePercentage} title\n\n` +
         `⚙️ Config: ${config.batchSize}×${batchCount}=${config.batchSize * batchCount} URLs | Force: ${config.forceUpdateAll ? "Y" : "N"}`;
 
       logger.info(statsMessage);

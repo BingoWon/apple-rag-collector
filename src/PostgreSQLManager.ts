@@ -117,21 +117,29 @@ class PostgreSQLManager {
 
   async getStats(): Promise<DatabaseStats> {
     const appleUrlPattern = "https://developer.apple.com/%";
+    const videoUrlPattern = "https://developer.apple.com/videos/play/%";
 
     const [
-      totalResult,
-      collectedResult,
+      // Docs stats (non-video pages)
+      docsTotal,
+      docsCollected,
+      // Videos stats
+      videosTotal,
+      videosCollected,
+      // Combined stats
       avgResult,
       minMaxResult,
       distributionResult,
       chunksResult,
-      pagesQualityResult,
-      chunksQualityResult,
     ] = await Promise.all([
       this
-        .sql`SELECT COUNT(*) as count FROM pages WHERE url LIKE ${appleUrlPattern}`,
+        .sql`SELECT COUNT(*) as count FROM pages WHERE url LIKE ${appleUrlPattern} AND url NOT LIKE ${videoUrlPattern}`,
       this
-        .sql`SELECT COUNT(*) as count FROM pages WHERE url LIKE ${appleUrlPattern} AND collect_count > 0`,
+        .sql`SELECT COUNT(*) as count FROM pages WHERE url LIKE ${appleUrlPattern} AND url NOT LIKE ${videoUrlPattern} AND collect_count > 0`,
+      this
+        .sql`SELECT COUNT(*) as count FROM pages WHERE url LIKE ${videoUrlPattern}`,
+      this
+        .sql`SELECT COUNT(*) as count FROM pages WHERE url LIKE ${videoUrlPattern} AND collect_count > 0`,
       this
         .sql`SELECT AVG(collect_count) as avg FROM pages WHERE url LIKE ${appleUrlPattern}`,
       this
@@ -140,90 +148,56 @@ class PostgreSQLManager {
         .sql`SELECT collect_count, COUNT(*) as count FROM pages WHERE url LIKE ${appleUrlPattern} GROUP BY collect_count ORDER BY collect_count`,
       this
         .sql`SELECT COUNT(*) as count FROM chunks WHERE url LIKE ${appleUrlPattern}`,
-      this.sql`
-        SELECT
-          COUNT(CASE WHEN content IS NULL OR content = '' THEN 1 END) as missing_content_count,
-          COUNT(CASE WHEN title IS NULL OR title = '' THEN 1 END) as missing_title_count
-        FROM pages WHERE url LIKE ${appleUrlPattern}
-      `,
-      this.sql`
-        SELECT
-          COUNT(CASE WHEN content IS NULL OR content = '' THEN 1 END) as missing_content_count,
-          COUNT(CASE WHEN title IS NULL OR title = '' THEN 1 END) as missing_title_count
-        FROM chunks WHERE url LIKE ${appleUrlPattern}
-      `,
     ]);
 
-    const total = parseInt(totalResult[0]?.["count"] || "0", 10);
-    const collected = parseInt(collectedResult[0]?.["count"] || "0", 10);
+    const docsCount = parseInt(docsTotal[0]?.["count"] || "0", 10);
+    const docsCollectedCount = parseInt(docsCollected[0]?.["count"] || "0", 10);
+    const videosCount = parseInt(videosTotal[0]?.["count"] || "0", 10);
+    const videosCollectedCount = parseInt(
+      videosCollected[0]?.["count"] || "0",
+      10
+    );
+
+    const total = docsCount + videosCount;
+    const collected = docsCollectedCount + videosCollectedCount;
     const avgCollectCount = parseFloat(avgResult[0]?.["avg"] || "0");
     const minCollectCount = parseInt(minMaxResult[0]?.["min"] || "0", 10);
     const maxCollectCount = parseInt(minMaxResult[0]?.["max"] || "0", 10);
     const totalChunks = parseInt(chunksResult[0]?.["count"] || "0", 10);
 
-    const pagesMissingContentCount = parseInt(
-      pagesQualityResult[0]?.["missing_content_count"] || "0",
-      10
-    );
-    const pagesMissingTitleCount = parseInt(
-      pagesQualityResult[0]?.["missing_title_count"] || "0",
-      10
-    );
-    const chunksMissingContentCount = parseInt(
-      chunksQualityResult[0]?.["missing_content_count"] || "0",
-      10
-    );
-    const chunksMissingTitleCount = parseInt(
-      chunksQualityResult[0]?.["missing_title_count"] || "0",
-      10
-    );
+    // Helper: percentage with 1 decimal, floor
+    const pct = (n: number, d: number) =>
+      d > 0 ? `${Math.floor((n / d) * 1000) / 10}%` : "0%";
 
     const collectCountDistribution: Record<
       string,
       { count: number; percentage: string }
     > = {};
     distributionResult.forEach((row: any) => {
-      const collectCount = String(row["collect_count"]);
+      const cc = String(row["collect_count"]);
       const count = parseInt(row["count"], 10);
-      const percentage =
-        total > 0 ? `${Math.round((count / total) * 10000) / 100}%` : "0%";
-      collectCountDistribution[collectCount] = { count, percentage };
+      collectCountDistribution[cc] = { count, percentage: pct(count, total) };
     });
 
     return {
+      docs: {
+        total: docsCount,
+        collected: docsCollectedCount,
+        collectedPercentage: pct(docsCollectedCount, docsCount),
+      },
+      videos: {
+        total: videosCount,
+        collected: videosCollectedCount,
+        collectedPercentage: pct(videosCollectedCount, videosCount),
+      },
       total,
       avgCollectCount: Math.round(avgCollectCount * 10000) / 10000,
       collectedCount: collected,
-      collectedPercentage:
-        total > 0 ? `${Math.round((collected / total) * 10000) / 100}%` : "0%",
+      collectedPercentage: pct(collected, total),
       maxCollectCount,
       minCollectCount,
       collectCountDistribution,
       totalChunks,
-      pagesMissingData: {
-        missingContentCount: pagesMissingContentCount,
-        missingContentPercentage:
-          total > 0
-            ? `${Math.round((pagesMissingContentCount / total) * 10000) / 100}%`
-            : "0%",
-        missingTitleCount: pagesMissingTitleCount,
-        missingTitlePercentage:
-          total > 0
-            ? `${Math.round((pagesMissingTitleCount / total) * 10000) / 100}%`
-            : "0%",
-      },
-      chunksMissingData: {
-        missingContentCount: chunksMissingContentCount,
-        missingContentPercentage:
-          totalChunks > 0
-            ? `${Math.round((chunksMissingContentCount / totalChunks) * 10000) / 100}%`
-            : "0%",
-        missingTitleCount: chunksMissingTitleCount,
-        missingTitlePercentage:
-          totalChunks > 0
-            ? `${Math.round((chunksMissingTitleCount / totalChunks) * 10000) / 100}%`
-            : "0%",
-      },
     };
   }
 

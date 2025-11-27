@@ -108,31 +108,29 @@ interface AppleAPIResponse {
 
 // Statistics interface
 interface DatabaseStats {
+  // Pages breakdown
+  readonly docs: {
+    readonly total: number;
+    readonly collected: number;
+    readonly collectedPercentage: string;
+  };
+  readonly videos: {
+    readonly total: number;
+    readonly collected: number;
+    readonly collectedPercentage: string;
+  };
+  // Combined stats
   readonly total: number;
   readonly avgCollectCount: number;
-  readonly collectedCount: number; // Number of records with CollectCount > 0
-  readonly collectedPercentage: string; // Percentage of records with CollectCount > 0
-  readonly maxCollectCount: number; // Maximum value of collect_count
-  readonly minCollectCount: number; // Minimum value of collect_count
+  readonly collectedCount: number;
+  readonly collectedPercentage: string;
+  readonly maxCollectCount: number;
+  readonly minCollectCount: number;
   readonly collectCountDistribution: Record<
     string,
     { count: number; percentage: string }
-  >; // Distribution of each collect_count value
-  readonly totalChunks: number; // Total number of chunks in chunks table
-
-  // Data missing statistics
-  readonly pagesMissingData: {
-    readonly missingContentCount: number;
-    readonly missingContentPercentage: string;
-    readonly missingTitleCount: number;
-    readonly missingTitlePercentage: string;
-  };
-  readonly chunksMissingData: {
-    readonly missingContentCount: number;
-    readonly missingContentPercentage: string;
-    readonly missingTitleCount: number;
-    readonly missingTitlePercentage: string;
-  };
+  >;
+  readonly totalChunks: number;
 }
 
 export type {
