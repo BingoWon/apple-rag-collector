@@ -20,6 +20,12 @@ class AppleAPIClient {
   };
   private static readonly ALL_VIDEOS_URL =
     "https://developer.apple.com/videos/all-videos/";
+  private static readonly VIDEO_URL_PREFIX =
+    "https://developer.apple.com/videos/play/";
+
+  static isVideoUrl(url: string): boolean {
+    return url.startsWith(AppleAPIClient.VIDEO_URL_PREFIX);
+  }
 
   /**
    * Discover all video URLs from Apple Developer Videos

@@ -25,7 +25,7 @@ interface ProcessingPlanItem {
   record: DatabaseRecord;
   collectResult: BatchResult<any>;
   hasChanged: boolean;
-  newRawJson?: string;
+  newRawJson?: string | null;
   processResult?: BatchResult<DocumentContent> | undefined;
   error?: string;
   isPermanentError?: boolean;
@@ -75,125 +75,6 @@ class AppleDocCollector {
     return inserted;
   }
 
-  /**
-   * Process pending videos (those with empty content)
-   */
-  async processVideos(): Promise<{ processed: number; chunks: number }> {
-    const pendingCount = await this.dbManager.getVideoPendingCount();
-    if (pendingCount === 0) {
-      return { processed: 0, chunks: 0 };
-    }
-
-    logger.info(`🎬 Processing ${pendingCount} pending videos`);
-
-    let totalProcessed = 0;
-    let totalChunks = 0;
-
-    // Process videos in batches
-    while (true) {
-      const records = await this.dbManager.getVideoRecordsToProcess(
-        this.config.batchSize
-      );
-
-      if (records.length === 0) break;
-
-      const result = await this.processVideoBatch(records);
-      totalProcessed += result.processed;
-      totalChunks += result.chunks;
-
-      logger.info(
-        `🎬 Video batch: ${result.processed}/${records.length} processed, ${result.chunks} chunks`
-      );
-    }
-
-    if (totalProcessed > 0) {
-      logger.info(
-        `🎬 Video processing complete: ${totalProcessed} videos, ${totalChunks} chunks`
-      );
-    }
-
-    return { processed: totalProcessed, chunks: totalChunks };
-  }
-
-  private async processVideoBatch(
-    records: DatabaseRecord[]
-  ): Promise<{ processed: number; chunks: number }> {
-    const urls = records.map((r) => r.url);
-    const results = await this.apiClient.fetchVideos(urls);
-
-    const successRecords: DatabaseRecord[] = [];
-    const deleteIds: string[] = [];
-    const contentItems: Array<{
-      url: string;
-      title: string | null;
-      content: string;
-    }> = [];
-
-    for (let i = 0; i < records.length; i++) {
-      const record = records[i]!;
-      const result = results[i]!;
-
-      if (result.error) {
-        if (BatchErrorHandler.isPermanentError(result.error)) {
-          deleteIds.push(record.id);
-          // Silent handling for videos without transcripts
-        }
-        continue;
-      }
-
-      if (result.data) {
-        successRecords.push(record);
-        contentItems.push({
-          url: record.url,
-          title: result.data.title,
-          content: result.data.content,
-        });
-      }
-    }
-
-    if (deleteIds.length > 0) {
-      await this.dbManager.deleteRecords(deleteIds);
-    }
-
-    if (contentItems.length === 0) {
-      return { processed: 0, chunks: 0 };
-    }
-
-    // Reuse unified chunk and embedding generation
-    const processResults = contentItems.map((item) => ({
-      url: item.url,
-      data: { title: item.title, content: item.content },
-    }));
-
-    const { allChunks, embeddings } =
-      await this.generateChunksAndEmbeddings(processResults);
-
-    if (allChunks.length > 0) {
-      const chunksWithEmbeddings = allChunks.map((item, index) => ({
-        url: item.url,
-        title: item.chunk.title,
-        content: item.chunk.content,
-        embedding: embeddings[index] || [],
-        chunk_index: item.chunk.chunk_index,
-        total_chunks: item.chunk.total_chunks,
-      }));
-
-      await this.dbManager.insertChunks(chunksWithEmbeddings);
-    }
-
-    const updatedRecords = successRecords.map((record, index) => ({
-      ...record,
-      updated_at: new Date(),
-      raw_json: null,
-      title: contentItems[index]!.title,
-      content: contentItems[index]!.content,
-    }));
-
-    await this.dbManager.batchUpdateFullRecords(updatedRecords);
-
-    return { processed: successRecords.length, chunks: allChunks.length };
-  }
-
   async execute(): Promise<{
     batchNumber: number;
     totalChunks: number;
@@ -228,42 +109,83 @@ class AppleDocCollector {
   private async processBatch(
     records: DatabaseRecord[]
   ): Promise<ProcessBatchResult> {
-    const urls = records.map((r) => r.url);
-    const collectResults = await this.apiClient.fetchDocuments(urls);
+    // Split records by type
+    const videoRecords = records.filter((r) =>
+      AppleAPIClient.isVideoUrl(r.url)
+    );
+    const docRecords = records.filter((r) => !AppleAPIClient.isVideoUrl(r.url));
 
-    const processingPlan = await this.createProcessingPlan(
+    // Fetch content in parallel
+    const [videoResults, docApiResults] = await Promise.all([
+      videoRecords.length > 0
+        ? this.apiClient.fetchVideos(videoRecords.map((r) => r.url))
+        : [],
+      docRecords.length > 0
+        ? this.apiClient.fetchDocuments(docRecords.map((r) => r.url))
+        : [],
+    ]);
+
+    // Process documents through contentProcessor
+    const validDocResults = docApiResults.filter((r) => r.data);
+    const docProcessResults =
+      validDocResults.length > 0
+        ? await this.contentProcessor.processDocuments(validDocResults)
+        : [];
+
+    // Build result maps (preserving original order)
+    const collectResultsMap = new Map<string, BatchResult<any>>();
+    const processResultsMap = new Map<string, BatchResult<DocumentContent>>();
+
+    // Map document results (use filter to align indices)
+    const validDocUrls = docApiResults.filter((r) => r.data).map((r) => r.url);
+    docApiResults.forEach((result) => {
+      collectResultsMap.set(result.url, result);
+    });
+    validDocUrls.forEach((url, i) => {
+      processResultsMap.set(url, docProcessResults[i]!);
+    });
+
+    // Map video results (convert VideoContent to DocumentContent format)
+    videoResults.forEach((result) => {
+      collectResultsMap.set(result.url, result);
+      if (result.data) {
+        processResultsMap.set(result.url, {
+          url: result.url,
+          data: {
+            title: result.data.title,
+            content: result.data.content,
+            extractedUrls: [],
+          },
+        });
+      }
+    });
+
+    // Build collect results in original record order
+    const collectResults = records.map(
+      (r) =>
+        collectResultsMap.get(r.url) || {
+          url: r.url,
+          data: null,
+          error: "Missing result",
+        }
+    );
+
+    const processingPlan = this.createProcessingPlan(
       records,
-      collectResults
+      collectResults,
+      processResultsMap
     );
     return await this.executeProcessingPlan(processingPlan);
   }
 
-  private async createProcessingPlan(
+  private createProcessingPlan(
     records: DatabaseRecord[],
-    collectResults: BatchResult<any>[]
-  ): Promise<ProcessingPlanItem[]> {
+    collectResults: BatchResult<any>[],
+    processResultsMap: Map<string, BatchResult<DocumentContent>>
+  ): ProcessingPlanItem[] {
     if (this.config.forceUpdateAll) {
       logger.info(`🔄 Force Update: Processing all ${records.length} URLs`);
     }
-
-    const validIndices: number[] = [];
-    const validCollectResults = collectResults.filter((result, index) => {
-      if (result.data) {
-        validIndices.push(index);
-        return true;
-      }
-      return false;
-    });
-
-    const processResults =
-      validCollectResults.length > 0
-        ? await this.contentProcessor.processDocuments(validCollectResults)
-        : [];
-
-    const processResultMap = new Map<number, any>();
-    validIndices.forEach((originalIndex, processIndex) => {
-      processResultMap.set(originalIndex, processResults[processIndex]);
-    });
 
     const planItems = records.map((record, index) => {
       const collectResult = collectResults[index];
@@ -279,7 +201,7 @@ class AppleDocCollector {
         );
       }
 
-      const processResult = processResultMap.get(index);
+      const processResult = processResultsMap.get(record.url);
       return this.createSuccessPlanItem(record, collectResult, processResult);
     });
 
@@ -307,7 +229,9 @@ class AppleDocCollector {
     collectResult: BatchResult<any>,
     processResult?: BatchResult<DocumentContent>
   ): ProcessingPlanItem {
-    const newRawJson = JSON.stringify(collectResult.data);
+    // Videos don't have raw JSON API response, only documents do
+    const isVideo = AppleAPIClient.isVideoUrl(record.url);
+    const newRawJson = isVideo ? null : JSON.stringify(collectResult.data);
     const comparison = this.compareContent(record, processResult);
 
     this.logContentChanges(record.url, comparison);

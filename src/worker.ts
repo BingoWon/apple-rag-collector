@@ -109,27 +109,22 @@ async function processAppleContent(env: Env): Promise<void> {
   const batchCount = parseInt(env.BATCH_COUNT || "30", 10);
   const startTime = Date.now();
 
-  // Phase 1: Video Discovery and Processing
+  // Video URL discovery (quick operation, just inserts new URLs)
   try {
     const newVideos = await collector.discoverVideos();
-    const videoResult = await collector.processVideos();
-
-    if (newVideos > 0 || videoResult.processed > 0) {
-      logger.info(
-        `🎬 Videos: ${newVideos} discovered, ${videoResult.processed} processed, ${videoResult.chunks} chunks`
-      );
+    if (newVideos > 0) {
+      logger.info(`🎬 Discovered ${newVideos} new video URLs`);
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    // HTTP 524 (Cloudflare timeout) - silent warning only
-    if (errorMessage.includes("HTTP 524")) {
-      logger.warn(`🎬 Video discovery skipped (timeout): ${errorMessage}`);
+    const msg = error instanceof Error ? error.message : String(error);
+    if (msg.includes("HTTP 524")) {
+      logger.warn(`🎬 Video discovery skipped (timeout)`);
     } else {
-      await logger.error(`🎬 Video processing failed: ${errorMessage}`);
+      await logger.error(`🎬 Video discovery failed: ${msg}`);
     }
   }
 
-  // Phase 2: Document Batch Processing
+  // Unified batch processing (videos + documents in same queue)
   logger.info(
     `Starting ${batchCount} batches × ${config.batchSize} URLs = ${config.batchSize * batchCount} total`
   );
