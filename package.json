@@ -1,6 +1,6 @@
 {
   "name": "apple-rag-collector",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Apple Developer Documentation Content Collector for RAG applications - Cloudflare Worker + PostgreSQL",
   "main": "src/worker.ts",
   "type": "module",
